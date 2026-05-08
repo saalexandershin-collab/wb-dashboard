@@ -1,0 +1,39 @@
+name: Ежедневная синхронизация WB
+
+on:
+  schedule:
+    # Каждый день в 03:00 МСК (00:00 UTC)
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "Год (например 2025)"
+        required: false
+        default: ""
+      month:
+        description: "Месяц (1-12)"
+        required: false
+        default: ""
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установить Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Установить зависимости
+        run: pip install -r requirements.txt
+
+      - name: Синхронизировать данные WB
+        env:
+          WB_API_TOKEN: ${{ secrets.WB_API_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SYNC_YEAR: ${{ github.event.inputs.year }}
+          SYNC_MONTH: ${{ github.event.inputs.month }}
+        run: python scripts/run_sync.py
