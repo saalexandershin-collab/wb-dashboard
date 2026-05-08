@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy import select, and_, func, extract
-from datetime import date, datetime
+from sqlalchemy import select, and_, extract, delete
+from datetime import datetime
 from typing import Optional
 import pandas as pd
 
@@ -13,29 +12,17 @@ class OrderRepository:
     def upsert_many(self, session: Session, records: list[dict]):
         if not records:
             return 0
-        stmt = pg_insert(Order).values(records)
-        stmt = stmt.on_conflict_do_update(
-            constraint="uq_orders_platform_srid",
-            set_={
-                "is_cancel": stmt.excluded.is_cancel,
-                "cancel_dt": stmt.excluded.cancel_dt,
-                "last_change_date": stmt.excluded.last_change_date,
-                "total_price": stmt.excluded.total_price,
-                "finished_price": stmt.excluded.finished_price,
-                "price_with_disc": stmt.excluded.price_with_disc,
-            }
+        srids = [r["srid"] for r in records]
+        platform = records[0]["platform"]
+        # Удаляем существующие, потом вставляем заново — работает и в SQLite, и в PostgreSQL
+        session.execute(
+            delete(Order).where(Order.platform == platform, Order.srid.in_(srids))
         )
-        session.execute(stmt)
+        session.bulk_insert_mappings(Order, records)
         session.commit()
         return len(records)
 
-    def get_by_month(
-        self,
-        session: Session,
-        year: int,
-        month: int,
-        platform: str = "wb",
-    ) -> pd.DataFrame:
+    def get_by_month(self, session: Session, year: int, month: int, platform: str = "wb") -> pd.DataFrame:
         stmt = select(Order).where(
             and_(
                 Order.platform == platform,
@@ -54,27 +41,16 @@ class SaleRepository:
     def upsert_many(self, session: Session, records: list[dict]):
         if not records:
             return 0
-        stmt = pg_insert(Sale).values(records)
-        stmt = stmt.on_conflict_do_update(
-            constraint="uq_sales_platform_sale_id",
-            set_={
-                "price_with_disc": stmt.excluded.price_with_disc,
-                "finished_price": stmt.excluded.finished_price,
-                "for_pay": stmt.excluded.for_pay,
-                "last_change_date": stmt.excluded.last_change_date,
-            }
+        sale_ids = [r["sale_id"] for r in records]
+        platform = records[0]["platform"]
+        session.execute(
+            delete(Sale).where(Sale.platform == platform, Sale.sale_id.in_(sale_ids))
         )
-        session.execute(stmt)
+        session.bulk_insert_mappings(Sale, records)
         session.commit()
         return len(records)
 
-    def get_by_month(
-        self,
-        session: Session,
-        year: int,
-        month: int,
-        platform: str = "wb",
-    ) -> pd.DataFrame:
+    def get_by_month(self, session: Session, year: int, month: int, platform: str = "wb") -> pd.DataFrame:
         stmt = select(Sale).where(
             and_(
                 Sale.platform == platform,
@@ -118,40 +94,23 @@ class SyncLogRepository:
 
 def _order_to_dict(o: Order) -> dict:
     return {
-        "id": o.id,
-        "srid": o.srid,
-        "nm_id": o.nm_id,
-        "supplier_article": o.supplier_article,
-        "barcode": o.barcode,
-        "brand": o.brand,
-        "subject": o.subject,
-        "category": o.category,
-        "warehouse_name": o.warehouse_name,
-        "region_name": o.region_name,
-        "total_price": o.total_price,
-        "discount_percent": o.discount_percent,
-        "finished_price": o.finished_price,
-        "price_with_disc": o.price_with_disc,
-        "order_date": o.order_date,
-        "is_cancel": o.is_cancel,
+        "id": o.id, "srid": o.srid, "nm_id": o.nm_id,
+        "supplier_article": o.supplier_article, "barcode": o.barcode,
+        "brand": o.brand, "subject": o.subject, "category": o.category,
+        "warehouse_name": o.warehouse_name, "region_name": o.region_name,
+        "total_price": o.total_price, "discount_percent": o.discount_percent,
+        "finished_price": o.finished_price, "price_with_disc": o.price_with_disc,
+        "order_date": o.order_date, "is_cancel": o.is_cancel,
     }
 
 
 def _sale_to_dict(s: Sale) -> dict:
     return {
-        "id": s.id,
-        "sale_id": s.sale_id,
-        "nm_id": s.nm_id,
-        "supplier_article": s.supplier_article,
-        "barcode": s.barcode,
-        "brand": s.brand,
-        "subject": s.subject,
-        "category": s.category,
-        "warehouse_name": s.warehouse_name,
-        "region_name": s.region_name,
-        "finished_price": s.finished_price,
-        "for_pay": s.for_pay,
-        "price_with_disc": s.price_with_disc,
-        "sale_date": s.sale_date,
+        "id": s.id, "sale_id": s.sale_id, "nm_id": s.nm_id,
+        "supplier_article": s.supplier_article, "barcode": s.barcode,
+        "brand": s.brand, "subject": s.subject, "category": s.category,
+        "warehouse_name": s.warehouse_name, "region_name": s.region_name,
+        "finished_price": s.finished_price, "for_pay": s.for_pay,
+        "price_with_disc": s.price_with_disc, "sale_date": s.sale_date,
         "is_return": s.is_return,
     }
