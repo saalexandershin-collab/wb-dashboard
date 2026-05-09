@@ -138,9 +138,18 @@ c2.metric("Выкупов", f"{total_buyouts:,}".replace(",", " "))
 c3.metric("Возвратов", f"{total_returns:,}".replace(",", " "))
 if plan_pct is not None:
     c4.metric("% плана", f"{plan_pct:.1f}%", help=f"План: {plan:,} выкупов")
-    c5.metric("Прогноз к концу месяца", f"{forecast_pct:.1f}%",
-              delta=f"{forecast_pct - 100:+.1f}% от плана",
-              help=f"~{int(forecast):,} выкупов при текущем темпе")
+    color = "#10B981" if forecast_pct >= 100 else "#EF4444"
+    delta_sign = "+" if forecast_pct >= 100 else ""
+    c5.markdown(
+        f"""
+        <div style="line-height:1.4">
+          <p style="font-size:0.875rem;color:#6B7280;margin:0">Прогноз к концу месяца</p>
+          <p style="font-size:2rem;font-weight:700;color:{color};margin:0">{forecast_pct:.1f}%</p>
+          <p style="font-size:0.875rem;color:{color};margin:0">{delta_sign}{forecast_pct-100:.1f}% от плана</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 else:
     c4.metric("% плана", "—")
     c5.metric("Прогноз", "—")
