@@ -128,18 +128,23 @@ if not d_orders.empty or not d_buyouts.empty:
     fig = go.Figure()
     if not d_orders.empty:
         fig.add_trace(go.Bar(x=d_orders["day"], y=d_orders["count"],
-                             name="Заказы", marker_color="#7C3AED"))
+                             name="Заказы", marker_color="#7C3AED",
+                             text=d_orders["count"], textposition="outside"))
     if not d_buyouts.empty:
         fig.add_trace(go.Bar(x=d_buyouts["day"], y=d_buyouts["count"],
-                             name="Выкупы", marker_color="#10B981"))
+                             name="Выкупы", marker_color="#10B981",
+                             text=d_buyouts["count"], textposition="outside"))
     if not d_cancelled.empty:
         fig.add_trace(go.Bar(x=d_cancelled["day"], y=d_cancelled["count"],
-                             name="Отмены", marker_color="#F59E0B"))
+                             name="Отмены", marker_color="#F59E0B",
+                             text=d_cancelled["count"], textposition="outside"))
     if not d_returns.empty:
         fig.add_trace(go.Bar(x=d_returns["day"], y=d_returns["count"],
-                             name="Возвраты", marker_color="#EF4444"))
+                             name="Возвраты", marker_color="#EF4444",
+                             text=d_returns["count"], textposition="outside"))
     fig.update_layout(barmode="group", legend=dict(orientation="h"),
-                      margin=dict(t=10, b=10), height=320)
+                      margin=dict(t=30, b=10), height=360,
+                      uniformtext=dict(mode="hide", minsize=8))
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("Нет данных")
