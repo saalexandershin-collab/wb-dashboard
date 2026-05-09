@@ -1,6 +1,8 @@
 import streamlit as st
 import calendar
-from datetime import date
+from datetime import date, timezone, timedelta
+
+MSK = timezone(timedelta(hours=3))
 
 st.set_page_config(page_title="Настройки", page_icon="⚙️", layout="wide")
 st.title("⚙️ Настройки и синхронизация")
@@ -139,7 +141,7 @@ try:
                 "Заказов": l.orders_loaded or 0,
                 "Продаж": l.sales_loaded or 0,
                 "Статус": "✅ Успех" if l.status == "success" else f"❌ {l.status}",
-                "Время": l.finished_at.strftime("%d.%m.%Y %H:%M") if l.finished_at else "—",
+                "Время (МСК)": l.finished_at.replace(tzinfo=timezone.utc).astimezone(MSK).strftime("%d.%m.%Y %H:%M") if l.finished_at else "—",
             })
         st.dataframe(pd.DataFrame(rows), use_container_width=True)
     else:
