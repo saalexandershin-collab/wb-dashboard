@@ -1,5 +1,5 @@
 import time
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional, Callable
 import calendar
 
@@ -22,6 +22,10 @@ class SyncManager:
         self.wb_client = WBClient(wb_token)
 
     def sync_month(self, year: int, month: int, on_progress: Optional[Callable] = None) -> dict:
+        # flag=0 returns records where lastChangeDate > dateFrom.
+        # We subtract 1 second so dateFrom = last moment of previous month,
+        # ensuring all records with lastChangeDate in target month are included.
+        date_from = datetime(year, month, 1) - timedelta(seconds=1)
         first_day = datetime(year, month, 1)
         last_day_num = calendar.monthrange(year, month)[1]
         last_day = datetime(year, month, last_day_num, 23, 59, 59)
@@ -40,7 +44,7 @@ class SyncManager:
             # ── Шаг 1: загрузка заказов ─────────────────────────────────────
             if on_progress:
                 on_progress("Загружаю заказы из WB API...")
-            raw_orders = self.wb_client.get_orders(first_day, on_progress=on_progress)
+            raw_orders = self.wb_client.get_orders(date_from, on_progress=on_progress)
             raw_orders = _filter_by_month(raw_orders, year, month, "date")
             orders = parse_orders(raw_orders)
 
@@ -52,7 +56,7 @@ class SyncManager:
             # ── Шаг 2: загрузка продаж (клиент сам выждет лимит) ────────────
             if on_progress:
                 on_progress("Загружаю продажи из WB API...")
-            raw_sales = self.wb_client.get_sales(first_day, on_progress=on_progress)
+            raw_sales = self.wb_client.get_sales(date_from, on_progress=on_progress)
             raw_sales = _filter_by_month(raw_sales, year, month, "date")
             sales = parse_sales(raw_sales)
 

@@ -71,14 +71,14 @@ class WBClient:
         data = response.json()
         return data if isinstance(data, list) else []
 
-    def get_orders(self, date_from: datetime, flag: int = 1, on_progress=None) -> list[dict]:
+    def get_orders(self, date_from: datetime, flag: int = 0, on_progress=None) -> list[dict]:
         return self._get(
             "/api/v1/supplier/orders",
             {"dateFrom": date_from.strftime("%Y-%m-%dT%H:%M:%S"), "flag": flag},
             on_progress=on_progress,
         )
 
-    def get_sales(self, date_from: datetime, flag: int = 1, on_progress=None) -> list[dict]:
+    def get_sales(self, date_from: datetime, flag: int = 0, on_progress=None) -> list[dict]:
         return self._get(
             "/api/v1/supplier/sales",
             {"dateFrom": date_from.strftime("%Y-%m-%dT%H:%M:%S"), "flag": flag},
