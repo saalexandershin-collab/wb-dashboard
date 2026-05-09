@@ -139,6 +139,7 @@ c3.metric("Возвратов", f"{total_returns:,}".replace(",", " "))
 if plan_pct is not None:
     c4.metric("% плана", f"{plan_pct:.1f}%", help=f"План: {plan:,} выкупов")
     c5.metric("Прогноз к концу месяца", f"{forecast_pct:.1f}%",
+              delta=f"{forecast_pct - 100:+.1f}% от плана",
               help=f"~{int(forecast):,} выкупов при текущем темпе")
 else:
     c4.metric("% плана", "—")
