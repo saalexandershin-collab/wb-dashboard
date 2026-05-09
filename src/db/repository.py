@@ -82,6 +82,10 @@ class SyncLogRepository:
                 setattr(log, k, v)
             session.commit()
 
+    def delete_by_id(self, session: Session, log_id: int):
+        session.execute(delete(SyncLog).where(SyncLog.id == log_id))
+        session.commit()
+
     def get_last(self, session: Session, platform: str = "wb") -> Optional[SyncLog]:
         stmt = (
             select(SyncLog)
