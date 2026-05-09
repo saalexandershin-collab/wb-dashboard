@@ -114,7 +114,7 @@ metric = st.radio(
 days_in_month = calendar.monthrange(year, month)[1]
 all_days = list(range(1, days_in_month + 1))
 
-def build_pivot(df, day_col, value_col, agg="count", item_col="supplier_article"):
+def build_pivot(df, day_col, value_col, agg="count", item_col="nm_id"):
     if df.empty:
         return pd.DataFrame()
     if agg == "count":
@@ -124,12 +124,12 @@ def build_pivot(df, day_col, value_col, agg="count", item_col="supplier_article"
     piv = piv.pivot(index=item_col, columns=day_col, values="val").reindex(columns=all_days).fillna(0)
     return piv
 
-def build_info(df, item_col="supplier_article"):
+def build_info(df):
     if df.empty:
-        return pd.DataFrame(columns=[item_col, "brand", "nm_id"])
-    return df.groupby(item_col).agg(
-        brand=("brand", "first"),
-        nm_id=("nm_id", "first"),
+        return pd.DataFrame(columns=["nm_id", "brand", "supplier_article"])
+    return df.groupby("nm_id").agg(
+        brand=("brand", "last"),
+        supplier_article=("supplier_article", "last"),
     ).reset_index()
 
 # Строим нужную таблицу
@@ -162,7 +162,7 @@ if piv.empty:
 source_df = ord_df if not ord_df.empty else sal_df
 info = build_info(source_df)
 piv = piv.reset_index()
-piv = piv.merge(info, on="supplier_article", how="left")
+piv = piv.merge(info, on="nm_id", how="left")
 
 # Итог по строке
 day_cols = [c for c in piv.columns if isinstance(c, int)]
@@ -174,7 +174,7 @@ piv = piv.rename(columns=rename)
 str_day_cols = [f"{d:02d}" for d in day_cols]
 
 # Итоговая строка по дням
-total_row = {"supplier_article": "ИТОГО", "brand": "", "nm_id": ""}
+total_row = {"nm_id": "", "brand": "", "supplier_article": "ИТОГО"}
 for c in str_day_cols:
     total_row[c] = piv[c].sum().round(1)
 total_row["Итого"] = piv["Итого"].sum().round(1)
