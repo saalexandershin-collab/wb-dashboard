@@ -1,16 +1,19 @@
+import math
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
+from sqlalchemy import text
 
 from src.api.wb_client import WBClient, WBApiError, parse_stocks
+from src.db.models import init_db, get_session_factory
 from src.auth import require_login
 
 st.set_page_config(page_title="Склады", page_icon="🏭", layout="wide")
 require_login()
-st.title("🏭 Остатки на складах FBO")
+st.title("🏭 Остатки и продажи по складам FBO")
 
-if "wildberries" not in st.secrets:
-    st.error("Не настроен токен WB. Проверьте раздел ⚙️ Настройки.")
+if "wildberries" not in st.secrets or "database" not in st.secrets:
+    st.error("Не настроены токен WB или база данных. Проверьте раздел ⚙️ Настройки.")
     st.stop()
 
 st.sidebar.markdown(f"👤 {st.session_state.get('username', '')}")
@@ -18,105 +21,184 @@ if st.sidebar.button("Выйти"):
     st.session_state.clear()
     st.rerun()
 
+DAYS_ANALYSIS = 14   # период для расчёта среднедневных продаж
+GREEN_DAYS    = 30   # порог «всё хорошо» (дней запаса)
+YELLOW_DAYS   = 14   # порог «предупреждение»
+RED_DAYS      = 7    # порог «критично»
+
 # ── Загрузка остатков ─────────────────────────────────────────────────────────
 @st.cache_data(ttl=3600, show_spinner="Загружаю остатки с WB...")
 def load_stocks(token: str) -> pd.DataFrame:
     client = WBClient(token)
-    date_from = datetime.now() - timedelta(days=30)
-    raw = client.get_stocks(date_from)
+    raw = client.get_stocks(datetime.now() - timedelta(days=30))
     rows = parse_stocks(raw)
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
-token = st.secrets["wildberries"]["api_token"]
+# ── Загрузка продаж за последние N дней ──────────────────────────────────────
+@st.cache_data(ttl=3600, show_spinner="Загружаю продажи...")
+def load_sales(db_url: str, days: int) -> pd.DataFrame:
+    engine = init_db(db_url)
+    Session = get_session_factory(engine)
+    date_from = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    with Session() as session:
+        rows = session.execute(text("""
+            SELECT nm_id, warehouse_name, COUNT(*) as sales_count
+            FROM sales
+            WHERE sale_date >= :date_from
+              AND sale_id NOT LIKE 'R%'
+            GROUP BY nm_id, warehouse_name
+        """), {"date_from": date_from}).fetchall()
+    if not rows:
+        return pd.DataFrame(columns=["nm_id", "warehouse_name", "sales_count"])
+    return pd.DataFrame(rows, columns=["nm_id", "warehouse_name", "sales_count"])
+
+token  = st.secrets["wildberries"]["api_token"]
+db_url = st.secrets["database"]["url"]
 
 try:
-    df = load_stocks(token)
+    stocks_df = load_stocks(token)
 except WBApiError as e:
     st.error(str(e))
     st.stop()
 
-if df.empty:
+sales_df = load_sales(db_url, DAYS_ANALYSIS)
+
+if stocks_df.empty:
     st.warning("Нет данных об остатках.")
     st.stop()
 
 # ── Актуальные артикулы по nm_id ──────────────────────────────────────────────
 latest = (
-    df.groupby("nm_id")
+    stocks_df.groupby("nm_id")
     .agg(supplier_article=("supplier_article", "last"), brand=("brand", "last"))
     .reset_index()
 )
-df = df.drop(columns=["supplier_article", "brand"]).merge(latest, on="nm_id", how="left")
+stocks_df = stocks_df.drop(columns=["supplier_article", "brand"]).merge(latest, on="nm_id", how="left")
 
 # ── Фильтры ───────────────────────────────────────────────────────────────────
 st.sidebar.markdown("### Фильтры")
-all_brands = sorted(df["brand"].dropna().unique())
-sel_brands = st.sidebar.multiselect("Бренд", all_brands)
-
-all_articles = sorted(latest["supplier_article"].dropna().unique())
-sel_articles = st.sidebar.multiselect("Артикул продавца", all_articles)
+sel_brands   = st.sidebar.multiselect("Бренд", sorted(stocks_df["brand"].dropna().unique()))
+sel_articles = st.sidebar.multiselect("Артикул продавца", sorted(latest["supplier_article"].dropna().unique()))
 
 if sel_brands:
-    df = df[df["brand"].isin(sel_brands)]
+    nm_ids_b = latest[latest["brand"].isin(sel_brands)]["nm_id"]
+    stocks_df = stocks_df[stocks_df["nm_id"].isin(nm_ids_b)]
+    sales_df  = sales_df[sales_df["nm_id"].isin(nm_ids_b)]
 if sel_articles:
-    nm_ids = latest[latest["supplier_article"].isin(sel_articles)]["nm_id"]
-    df = df[df["nm_id"].isin(nm_ids)]
+    nm_ids_a = latest[latest["supplier_article"].isin(sel_articles)]["nm_id"]
+    stocks_df = stocks_df[stocks_df["nm_id"].isin(nm_ids_a)]
+    sales_df  = sales_df[sales_df["nm_id"].isin(nm_ids_a)]
 
 # ── KPI ───────────────────────────────────────────────────────────────────────
-total_stock = df["quantity"].sum()
-total_transit_to = df["in_way_to_client"].sum()
-total_transit_from = df["in_way_from_client"].sum()
-total_full = df["quantity_full"].sum()
-
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("На складах", f"{total_stock:,}".replace(",", " "))
-c2.metric("В пути к клиенту", f"{total_transit_to:,}".replace(",", " "))
-c3.metric("В пути от клиента", f"{total_transit_from:,}".replace(",", " "))
-c4.metric("Всего (с учётом пути)", f"{total_full:,}".replace(",", " "))
+c1.metric("На складах", f"{stocks_df['quantity'].sum():,}".replace(",", " "))
+c2.metric("В пути к клиенту", f"{stocks_df['in_way_to_client'].sum():,}".replace(",", " "))
+c3.metric("В пути от клиента", f"{stocks_df['in_way_from_client'].sum():,}".replace(",", " "))
+c4.metric(f"Продаж за {DAYS_ANALYSIS} дней", f"{int(sales_df['sales_count'].sum()):,}".replace(",", " "))
 
 st.markdown("---")
 
-# ── Переключатель показателя ──────────────────────────────────────────────────
-metric_choice = st.radio(
-    "Показатель:",
-    ["На складе", "В пути к клиенту", "В пути от клиента"],
-    horizontal=True,
-)
-metric_col = {"На складе": "quantity", "В пути к клиенту": "in_way_to_client",
-              "В пути от клиента": "in_way_from_client"}[metric_choice]
-
-# ── Сводная таблица: артикулы × склады ───────────────────────────────────────
+# ── Сводная таблица остатков по складам ──────────────────────────────────────
+st.markdown("### Остатки по артикулам и складам")
 pivot = (
-    df.groupby(["nm_id", "warehouse_name"])[metric_col]
-    .sum()
-    .reset_index()
-    .pivot(index="nm_id", columns="warehouse_name", values=metric_col)
-    .fillna(0)
-    .astype(int)
+    stocks_df.groupby(["nm_id", "warehouse_name"])["quantity"]
+    .sum().reset_index()
+    .pivot(index="nm_id", columns="warehouse_name", values="quantity")
+    .fillna(0).astype(int).reset_index()
 )
-
-# Добавляем инфо о товаре и итоги
-pivot = pivot.reset_index().merge(latest[["nm_id", "brand", "supplier_article"]], on="nm_id", how="left")
-warehouse_cols = [c for c in pivot.columns if c not in ("nm_id", "brand", "supplier_article")]
+warehouse_cols = [c for c in pivot.columns if c != "nm_id"]
+pivot = pivot.merge(latest[["nm_id", "brand", "supplier_article"]], on="nm_id", how="left")
 pivot["Итого"] = pivot[warehouse_cols].sum(axis=1)
 pivot = pivot.sort_values("Итого", ascending=False)
-
 display_cols = ["brand", "supplier_article", "nm_id"] + warehouse_cols + ["Итого"]
-pivot = pivot[display_cols].rename(columns={
+pivot = pivot[display_cols].rename(columns={"brand": "Бренд", "supplier_article": "Артикул", "nm_id": "nmId WB"})
+st.dataframe(pivot, use_container_width=True, hide_index=True, height=400)
+
+st.markdown("---")
+
+# ── Анализ запасов: склад + артикул ──────────────────────────────────────────
+st.markdown(f"### Анализ запасов (продажи за {DAYS_ANALYSIS} дн. · порог поставки: {GREEN_DAYS} дн.)")
+
+stock_by = stocks_df.groupby(["nm_id", "warehouse_name"])["quantity"].sum().reset_index()
+stock_by.columns = ["nm_id", "warehouse_name", "stock"]
+
+sales_by = sales_df.rename(columns={"sales_count": "sales_total"})
+sales_by["daily_avg"] = (sales_by["sales_total"] / DAYS_ANALYSIS).round(2)
+
+merged = stock_by.merge(sales_by[["nm_id", "warehouse_name", "sales_total", "daily_avg"]],
+                        on=["nm_id", "warehouse_name"], how="left").fillna(0)
+merged = merged.merge(latest[["nm_id", "brand", "supplier_article"]], on="nm_id", how="left")
+
+# Дней запаса и сколько нужно поставить
+def days_of_supply(row):
+    if row["daily_avg"] <= 0:
+        return 999
+    return round(row["stock"] / row["daily_avg"], 1)
+
+def needed_qty(row):
+    if row["daily_avg"] <= 0:
+        return 0
+    target = math.ceil(GREEN_DAYS * row["daily_avg"])
+    need = target - int(row["stock"])
+    return max(0, need)
+
+def status(days):
+    if days >= GREEN_DAYS:
+        return "🟢 OK"
+    if days >= YELLOW_DAYS:
+        return "🟡 Предупреждение"
+    if days >= RED_DAYS:
+        return "🟠 Скоро закончится"
+    return "🔴 Критично"
+
+merged["days_supply"] = merged.apply(days_of_supply, axis=1)
+merged["needed"]      = merged.apply(needed_qty, axis=1)
+merged["status"]      = merged["days_supply"].apply(status)
+
+# Убираем строки где нет продаж и нет остатка
+merged = merged[(merged["stock"] > 0) | (merged["sales_total"] > 0)]
+merged = merged.sort_values(["days_supply"], ascending=True)
+
+result = merged[[
+    "brand", "supplier_article", "nm_id", "warehouse_name",
+    "stock", "daily_avg", "days_supply", "needed", "status"
+]].rename(columns={
     "brand": "Бренд",
     "supplier_article": "Артикул",
     "nm_id": "nmId WB",
+    "warehouse_name": "Склад",
+    "stock": "Остаток",
+    "daily_avg": "Продаж/день",
+    "days_supply": "Запас (дней)",
+    "needed": "Нужно поставить",
+    "status": "Статус",
 })
 
-st.markdown(f"### {metric_choice} — по артикулам и складам")
-st.dataframe(pivot, use_container_width=True, hide_index=True, height=500)
-
-# ── Итого по складам ──────────────────────────────────────────────────────────
-st.markdown("### Итого по складам")
-by_warehouse = (
-    df.groupby("warehouse_name")[metric_col]
-    .sum()
-    .reset_index()
-    .rename(columns={"warehouse_name": "Склад", metric_col: "Количество"})
-    .sort_values("Количество", ascending=False)
+# Сначала показываем критичные
+st.dataframe(
+    result,
+    use_container_width=True,
+    hide_index=True,
+    height=500,
+    column_config={
+        "Запас (дней)": st.column_config.NumberColumn(format="%.1f"),
+        "Продаж/день": st.column_config.NumberColumn(format="%.1f"),
+        "Нужно поставить": st.column_config.NumberColumn(
+            help=f"Количество для достижения {GREEN_DAYS} дней запаса"
+        ),
+    },
 )
-st.dataframe(by_warehouse, use_container_width=True, hide_index=True)
+
+# ── Сводка по критичным позициям ──────────────────────────────────────────────
+critical = result[result["Статус"].str.startswith("🔴")]
+warning  = result[(result["Статус"].str.startswith("🟠")) | (result["Статус"].str.startswith("🟡"))]
+
+if not critical.empty:
+    st.error(f"🔴 Критично (менее {RED_DAYS} дней): {len(critical)} позиций")
+    st.dataframe(critical[["Артикул", "Склад", "Остаток", "Продаж/день", "Запас (дней)", "Нужно поставить"]],
+                 use_container_width=True, hide_index=True)
+
+if not warning.empty:
+    st.warning(f"🟡 Предупреждение (менее {GREEN_DAYS} дней): {len(warning)} позиций")
+    st.dataframe(warning[["Артикул", "Склад", "Остаток", "Продаж/день", "Запас (дней)", "Нужно поставить"]],
+                 use_container_width=True, hide_index=True)
