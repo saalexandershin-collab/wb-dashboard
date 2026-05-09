@@ -111,17 +111,38 @@ ret_df = sal_df[sal_df["is_return"] == True] if not sal_df.empty else pd.DataFra
 buy_df = sal_df[sal_df["is_return"] == False] if not sal_df.empty else pd.DataFrame()
 
 # ── KPI карточки ─────────────────────────────────────────────────────────────
+SALES_PLAN = {(2026, 5): 4500}  # план по месяцам: {(год, месяц): кол-во выкупов}
+
 total_orders = len(ord_df[ord_df["is_actual"]]) if not ord_df.empty else 0
 total_buyouts = len(buy_df)
 total_returns = len(ret_df)
-buyout_rate = (total_buyouts / total_orders * 100) if total_orders > 0 else 0
+
+plan = SALES_PLAN.get((year, month))
+days_in_month = calendar.monthrange(year, month)[1]
+
+if plan and not buy_df.empty:
+    # Сколько дней прошло по данным
+    max_day = pd.to_datetime(buy_df["sale_date"]).dt.day.max()
+    days_elapsed = int(max_day) if max_day > 0 else 1
+    plan_pct = total_buyouts / plan * 100
+    daily_rate = total_buyouts / days_elapsed
+    forecast = daily_rate * days_in_month
+    forecast_pct = forecast / plan * 100
+else:
+    plan_pct = forecast_pct = None
 
 st.markdown("### Итого за месяц")
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Заказов", f"{total_orders:,}".replace(",", " "))
 c2.metric("Выкупов", f"{total_buyouts:,}".replace(",", " "))
 c3.metric("Возвратов", f"{total_returns:,}".replace(",", " "))
-c4.metric("% выкупа", f"{buyout_rate:.1f}%")
+if plan_pct is not None:
+    c4.metric("% плана", f"{plan_pct:.1f}%", help=f"План: {plan:,} выкупов")
+    c5.metric("Прогноз к концу месяца", f"{forecast_pct:.1f}%",
+              help=f"~{int(forecast):,} выкупов при текущем темпе")
+else:
+    c4.metric("% плана", "—")
+    c5.metric("Прогноз", "—")
 
 st.markdown("---")
 
