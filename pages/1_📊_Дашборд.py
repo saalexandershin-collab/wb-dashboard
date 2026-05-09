@@ -74,6 +74,39 @@ def prep_sales(df: pd.DataFrame) -> pd.DataFrame:
 
 ord_df = prep_orders(df_orders)
 sal_df = prep_sales(df_sales)
+
+# ── Фильтры в сайдбаре ───────────────────────────────────────────────────────
+st.sidebar.markdown("### Фильтры")
+
+# Бренд
+all_brands = sorted(ord_df["brand"].dropna().unique().tolist()) if not ord_df.empty else []
+sel_brands = st.sidebar.multiselect("Бренд", all_brands)
+
+# Артикул — только актуальные (последнее название по nm_id)
+if not ord_df.empty:
+    latest_articles = (
+        ord_df.groupby("nm_id")["supplier_article"]
+        .last()
+        .reset_index()
+        .sort_values("supplier_article")
+    )
+    all_articles = latest_articles["supplier_article"].dropna().tolist()
+else:
+    latest_articles = pd.DataFrame(columns=["nm_id", "supplier_article"])
+    all_articles = []
+
+sel_articles = st.sidebar.multiselect("Артикул продавца", all_articles)
+
+# Применяем фильтры
+if sel_brands:
+    ord_df = ord_df[ord_df["brand"].isin(sel_brands)]
+    sal_df = sal_df[sal_df["brand"].isin(sel_brands)] if not sal_df.empty else sal_df
+
+if sel_articles:
+    nm_ids = latest_articles[latest_articles["supplier_article"].isin(sel_articles)]["nm_id"]
+    ord_df = ord_df[ord_df["nm_id"].isin(nm_ids)]
+    sal_df = sal_df[sal_df["nm_id"].isin(nm_ids)] if not sal_df.empty else sal_df
+
 ret_df = sal_df[sal_df["is_return"] == True] if not sal_df.empty else pd.DataFrame()
 buy_df = sal_df[sal_df["is_return"] == False] if not sal_df.empty else pd.DataFrame()
 
