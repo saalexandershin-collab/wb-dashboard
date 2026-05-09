@@ -72,80 +72,54 @@ buy_df = sal_df[sal_df["is_return"] == False] if not sal_df.empty else pd.DataFr
 
 # ── KPI карточки ─────────────────────────────────────────────────────────────
 total_orders = len(ord_df[ord_df["is_actual"]]) if not ord_df.empty else 0
-total_orders_sum = ord_df[ord_df["is_actual"]]["price_with_disc"].sum() if not ord_df.empty else 0
 total_buyouts = len(buy_df)
-total_buyouts_sum = buy_df["finished_price"].sum() if not buy_df.empty else 0
 total_returns = len(ret_df)
 buyout_rate = (total_buyouts / total_orders * 100) if total_orders > 0 else 0
-avg_price = (total_buyouts_sum / total_buyouts) if total_buyouts > 0 else 0
 
 st.markdown("### Итого за месяц")
-c1, c2, c3, c4, c5, c6 = st.columns(6)
+c1, c2, c3, c4 = st.columns(4)
 c1.metric("Заказов", f"{total_orders:,}".replace(",", " "))
-c2.metric("Сумма заказов", f"{total_orders_sum:,.0f} ₽".replace(",", " "))
-c3.metric("Выкупов", f"{total_buyouts:,}".replace(",", " "))
-c4.metric("Сумма выкупов", f"{total_buyouts_sum:,.0f} ₽".replace(",", " "))
-c5.metric("Возвратов", f"{total_returns:,}".replace(",", " "))
-c6.metric("% выкупа", f"{buyout_rate:.1f}%")
+c2.metric("Выкупов", f"{total_buyouts:,}".replace(",", " "))
+c3.metric("Возвратов", f"{total_returns:,}".replace(",", " "))
+c4.metric("% выкупа", f"{buyout_rate:.1f}%")
 
 st.markdown("---")
 
 # ── Динамика по дням ─────────────────────────────────────────────────────────
 def daily_orders(df):
     if df.empty:
-        return pd.DataFrame(columns=["day", "count", "sum"])
+        return pd.DataFrame(columns=["day", "count"])
     actual = df[df["is_actual"]]
-    g = actual.groupby("day").agg(count=("srid", "count"), sum=("price_with_disc", "sum")).reset_index()
+    g = actual.groupby("day").agg(count=("srid", "count")).reset_index()
     return g
 
 def daily_sales(df, is_return: bool):
     if df.empty:
-        return pd.DataFrame(columns=["day", "count", "sum"])
+        return pd.DataFrame(columns=["day", "count"])
     sub = df[df["is_return"] == is_return]
     if sub.empty:
-        return pd.DataFrame(columns=["day", "count", "sum"])
-    g = sub.groupby("day").agg(count=("sale_id", "count"), sum=("finished_price", "sum")).reset_index()
+        return pd.DataFrame(columns=["day", "count"])
+    g = sub.groupby("day").agg(count=("sale_id", "count")).reset_index()
     return g
 
 d_orders = daily_orders(ord_df)
 d_buyouts = daily_sales(sal_df, False)
 d_returns = daily_sales(sal_df, True)
 
-col_g1, col_g2 = st.columns(2)
-
-with col_g1:
-    st.markdown("#### Заказы и выкупы по дням (шт.)")
-    if not d_orders.empty or not d_buyouts.empty:
-        fig = go.Figure()
-        if not d_orders.empty:
-            fig.add_trace(go.Bar(x=d_orders["day"], y=d_orders["count"],
-                                 name="Заказы", marker_color="#7C3AED"))
-        if not d_buyouts.empty:
-            fig.add_trace(go.Bar(x=d_buyouts["day"], y=d_buyouts["count"],
-                                 name="Выкупы", marker_color="#10B981"))
-        fig.update_layout(barmode="group", legend=dict(orientation="h"),
-                          margin=dict(t=10, b=10), height=300)
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Нет данных")
-
-with col_g2:
-    st.markdown("#### Сумма заказов и выкупов по дням (₽)")
-    if not d_orders.empty or not d_buyouts.empty:
-        fig2 = go.Figure()
-        if not d_orders.empty:
-            fig2.add_trace(go.Scatter(x=d_orders["day"], y=d_orders["sum"],
-                                      mode="lines+markers", name="Заказы ₽",
-                                      line=dict(color="#7C3AED")))
-        if not d_buyouts.empty:
-            fig2.add_trace(go.Scatter(x=d_buyouts["day"], y=d_buyouts["sum"],
-                                      mode="lines+markers", name="Выкупы ₽",
-                                      line=dict(color="#10B981")))
-        fig2.update_layout(legend=dict(orientation="h"),
-                           margin=dict(t=10, b=10), height=300)
-        st.plotly_chart(fig2, use_container_width=True)
-    else:
-        st.info("Нет данных")
+st.markdown("#### Заказы и выкупы по дням (шт.)")
+if not d_orders.empty or not d_buyouts.empty:
+    fig = go.Figure()
+    if not d_orders.empty:
+        fig.add_trace(go.Bar(x=d_orders["day"], y=d_orders["count"],
+                             name="Заказы", marker_color="#7C3AED"))
+    if not d_buyouts.empty:
+        fig.add_trace(go.Bar(x=d_buyouts["day"], y=d_buyouts["count"],
+                             name="Выкупы", marker_color="#10B981"))
+    fig.update_layout(barmode="group", legend=dict(orientation="h"),
+                      margin=dict(t=10, b=10), height=300)
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("Нет данных")
 
 col_g3, col_g4 = st.columns(2)
 

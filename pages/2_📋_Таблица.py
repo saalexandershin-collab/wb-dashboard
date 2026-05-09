@@ -98,10 +98,7 @@ metric = st.radio(
         "Заказы, шт.",
         "Выкупы, шт.",
         "Возвраты, шт.",
-        "Заказы, ₽",
-        "Выкупы, ₽",
         "% выкупа",
-        "Средняя цена выкупа, ₽",
     ],
     horizontal=True,
 )
@@ -138,12 +135,6 @@ elif metric == "Выкупы, шт.":
 elif metric == "Возвраты, шт.":
     sub = sal_df[sal_df["is_return"] == True] if not sal_df.empty else sal_df
     piv = build_pivot(sub, "day", None, "count")
-elif metric == "Заказы, ₽":
-    actual = ord_df[ord_df["is_actual"]] if not ord_df.empty else ord_df
-    piv = build_pivot(actual, "day", "price_with_disc", "sum")
-elif metric == "Выкупы, ₽":
-    sub = sal_df[sal_df["is_return"] == False] if not sal_df.empty else sal_df
-    piv = build_pivot(sub, "day", "finished_price", "sum")
 elif metric == "% выкупа":
     actual = ord_df[ord_df["is_actual"]] if not ord_df.empty else ord_df
     sub = sal_df[sal_df["is_return"] == False] if not sal_df.empty else sal_df
@@ -153,14 +144,6 @@ elif metric == "% выкупа":
     o_piv = o_piv.reindex(all_idx, fill_value=0)
     b_piv = b_piv.reindex(all_idx, fill_value=0)
     piv = (b_piv / o_piv.replace(0, float("nan")) * 100).round(1).fillna(0)
-elif metric == "Средняя цена выкупа, ₽":
-    sub = sal_df[sal_df["is_return"] == False] if not sal_df.empty else sal_df
-    if not sub.empty:
-        cnt = build_pivot(sub, "day", None, "count")
-        sm = build_pivot(sub, "day", "finished_price", "sum")
-        piv = (sm / cnt.replace(0, float("nan"))).round(0).fillna(0)
-    else:
-        piv = pd.DataFrame()
 else:
     piv = pd.DataFrame()
 
