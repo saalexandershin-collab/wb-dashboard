@@ -78,12 +78,38 @@ class WBClient:
             on_progress=on_progress,
         )
 
+    def get_stocks(self, date_from: datetime, on_progress=None) -> list[dict]:
+        return self._get(
+            "/api/v1/supplier/stocks",
+            {"dateFrom": date_from.strftime("%Y-%m-%dT%H:%M:%S")},
+            on_progress=on_progress,
+        )
+
     def get_sales(self, date_from: datetime, flag: int = 0, on_progress=None) -> list[dict]:
         return self._get(
             "/api/v1/supplier/sales",
             {"dateFrom": date_from.strftime("%Y-%m-%dT%H:%M:%S"), "flag": flag},
             on_progress=on_progress,
         )
+
+
+def parse_stocks(raw: list[dict]) -> list[dict]:
+    result = []
+    for r in raw:
+        result.append({
+            "nm_id": r.get("nmId"),
+            "supplier_article": r.get("supplierArticle"),
+            "barcode": r.get("barcode"),
+            "brand": r.get("brand"),
+            "subject": r.get("subject"),
+            "category": r.get("category"),
+            "warehouse_name": r.get("warehouseName"),
+            "quantity": int(r.get("quantity") or 0),
+            "in_way_to_client": int(r.get("inWayToClient") or 0),
+            "in_way_from_client": int(r.get("inWayFromClient") or 0),
+            "quantity_full": int(r.get("quantityFull") or 0),
+        })
+    return result
 
 
 def parse_orders(raw: list[dict], platform: str = "wb") -> list[dict]:
