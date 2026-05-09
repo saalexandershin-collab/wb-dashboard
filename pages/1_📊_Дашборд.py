@@ -113,7 +113,17 @@ d_orders = daily_orders(ord_df)
 d_buyouts = daily_sales(sal_df, False)
 d_returns = daily_sales(sal_df, True)
 
-st.markdown("#### Заказы и выкупы по дням (шт.)")
+def daily_cancelled(df):
+    if df.empty:
+        return pd.DataFrame(columns=["day", "count"])
+    cancelled = df[~df["is_actual"]]
+    if cancelled.empty:
+        return pd.DataFrame(columns=["day", "count"])
+    return cancelled.groupby("day").agg(count=("srid", "count")).reset_index()
+
+d_cancelled = daily_cancelled(ord_df)
+
+st.markdown("#### Заказы, выкупы, отмены и возвраты по дням (шт.)")
 if not d_orders.empty or not d_buyouts.empty:
     fig = go.Figure()
     if not d_orders.empty:
@@ -122,58 +132,38 @@ if not d_orders.empty or not d_buyouts.empty:
     if not d_buyouts.empty:
         fig.add_trace(go.Bar(x=d_buyouts["day"], y=d_buyouts["count"],
                              name="Выкупы", marker_color="#10B981"))
+    if not d_cancelled.empty:
+        fig.add_trace(go.Bar(x=d_cancelled["day"], y=d_cancelled["count"],
+                             name="Отмены", marker_color="#F59E0B"))
+    if not d_returns.empty:
+        fig.add_trace(go.Bar(x=d_returns["day"], y=d_returns["count"],
+                             name="Возвраты", marker_color="#EF4444"))
     fig.update_layout(barmode="group", legend=dict(orientation="h"),
-                      margin=dict(t=10, b=10), height=300)
+                      margin=dict(t=10, b=10), height=320)
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("Нет данных")
 
-col_g3, col_g4 = st.columns(2)
-
-with col_g3:
-    st.markdown("#### Возвраты по дням (шт.)")
-    if not d_returns.empty:
-        fig3 = px.bar(d_returns, x="day", y="count", color_discrete_sequence=["#EF4444"])
-        fig3.update_layout(margin=dict(t=10, b=10), height=280)
-        st.plotly_chart(fig3, use_container_width=True)
-    else:
-        st.info("Возвратов нет")
-
-with col_g4:
-    st.markdown("#### Топ-10 товаров по заказам")
-    if not ord_df.empty:
-        actual = ord_df[ord_df["is_actual"]]
-        names = actual.groupby("nm_id").agg(
-            supplier_article=("supplier_article", "last"),
-            brand=("brand", "last"),
-        ).reset_index()
-        top = (
-            actual.groupby("nm_id")
-            .agg(count=("srid", "count"))
-            .reset_index()
-            .merge(names, on="nm_id", how="left")
-            .sort_values("count", ascending=False)
-            .head(10)
-        )
-        top["label"] = top["supplier_article"].fillna("") + " / " + top["brand"].fillna("")
-        fig4 = px.bar(top, x="count", y="label", orientation="h",
-                      color_discrete_sequence=["#7C3AED"])
-        fig4.update_layout(yaxis=dict(autorange="reversed"),
-                           margin=dict(t=10, b=10), height=300)
-        st.plotly_chart(fig4, use_container_width=True)
-    else:
-        st.info("Нет данных")
-
-# ── Отменённые заказы по дням ────────────────────────────────────────────────
-st.markdown("#### Отменённые заказы по дням (шт.)")
+st.markdown("#### Топ-10 товаров по заказам")
 if not ord_df.empty:
-    cancelled = ord_df[~ord_df["is_actual"]]
-    if not cancelled.empty:
-        d_cancelled = cancelled.groupby("day").agg(count=("srid", "count")).reset_index()
-        fig5 = px.bar(d_cancelled, x="day", y="count", color_discrete_sequence=["#F59E0B"])
-        fig5.update_layout(margin=dict(t=10, b=10), height=320, xaxis_title="День")
-        st.plotly_chart(fig5, use_container_width=True)
-    else:
-        st.info("Отменённых заказов нет")
+    actual = ord_df[ord_df["is_actual"]]
+    names = actual.groupby("nm_id").agg(
+        supplier_article=("supplier_article", "last"),
+        brand=("brand", "last"),
+    ).reset_index()
+    top = (
+        actual.groupby("nm_id")
+        .agg(count=("srid", "count"))
+        .reset_index()
+        .merge(names, on="nm_id", how="left")
+        .sort_values("count", ascending=False)
+        .head(10)
+    )
+    top["label"] = top["supplier_article"].fillna("") + " / " + top["brand"].fillna("")
+    fig4 = px.bar(top, x="count", y="label", orientation="h",
+                  color_discrete_sequence=["#7C3AED"])
+    fig4.update_layout(yaxis=dict(autorange="reversed"),
+                       margin=dict(t=10, b=10), height=320)
+    st.plotly_chart(fig4, use_container_width=True)
 else:
     st.info("Нет данных")
