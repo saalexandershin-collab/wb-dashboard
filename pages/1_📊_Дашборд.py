@@ -142,11 +142,16 @@ with col_g3:
 with col_g4:
     st.markdown("#### Топ-10 товаров по заказам")
     if not ord_df.empty:
+        actual = ord_df[ord_df["is_actual"]]
+        names = actual.groupby("nm_id").agg(
+            supplier_article=("supplier_article", "last"),
+            brand=("brand", "last"),
+        ).reset_index()
         top = (
-            ord_df[ord_df["is_actual"]]
-            .groupby(["supplier_article", "brand"])
+            actual.groupby("nm_id")
             .agg(count=("srid", "count"))
             .reset_index()
+            .merge(names, on="nm_id", how="left")
             .sort_values("count", ascending=False)
             .head(10)
         )
@@ -162,9 +167,14 @@ with col_g4:
 # ── % выкупа по товарам ───────────────────────────────────────────────────────
 st.markdown("#### % выкупа по топ-15 товарам")
 if not ord_df.empty and not buy_df.empty:
-    o_g = ord_df[ord_df["is_actual"]].groupby("supplier_article").agg(orders=("srid", "count")).reset_index()
-    b_g = buy_df.groupby("supplier_article").agg(buyouts=("sale_id", "count")).reset_index()
-    merged = o_g.merge(b_g, on="supplier_article", how="left").fillna(0)
+    actual = ord_df[ord_df["is_actual"]]
+    names = actual.groupby("nm_id").agg(
+        supplier_article=("supplier_article", "last"),
+    ).reset_index()
+    o_g = actual.groupby("nm_id").agg(orders=("srid", "count")).reset_index()
+    b_g = buy_df.groupby("nm_id").agg(buyouts=("sale_id", "count")).reset_index()
+    merged = o_g.merge(b_g, on="nm_id", how="left").fillna(0)
+    merged = merged.merge(names, on="nm_id", how="left")
     merged["rate"] = (merged["buyouts"] / merged["orders"] * 100).round(1)
     merged = merged.sort_values("orders", ascending=False).head(15)
     fig5 = px.bar(merged, x="supplier_article", y="rate",
