@@ -164,25 +164,16 @@ with col_g4:
     else:
         st.info("Нет данных")
 
-# ── % выкупа по товарам ───────────────────────────────────────────────────────
-st.markdown("#### % выкупа по топ-15 товарам")
-if not ord_df.empty and not buy_df.empty:
-    actual = ord_df[ord_df["is_actual"]]
-    names = actual.groupby("nm_id").agg(
-        supplier_article=("supplier_article", "last"),
-    ).reset_index()
-    o_g = actual.groupby("nm_id").agg(orders=("srid", "count")).reset_index()
-    b_g = buy_df.groupby("nm_id").agg(buyouts=("sale_id", "count")).reset_index()
-    merged = o_g.merge(b_g, on="nm_id", how="left").fillna(0)
-    merged = merged.merge(names, on="nm_id", how="left")
-    merged["rate"] = (merged["buyouts"] / merged["orders"] * 100).round(1)
-    merged = merged.sort_values("orders", ascending=False).head(15)
-    fig5 = px.bar(merged, x="supplier_article", y="rate",
-                  color="rate", color_continuous_scale="RdYlGn",
-                  range_color=[0, 100], text="rate")
-    fig5.update_traces(texttemplate="%{text}%", textposition="outside")
-    fig5.update_layout(margin=dict(t=10, b=10), height=320,
-                       coloraxis_showscale=False, xaxis_title="Артикул")
-    st.plotly_chart(fig5, use_container_width=True)
+# ── Отменённые заказы по дням ────────────────────────────────────────────────
+st.markdown("#### Отменённые заказы по дням (шт.)")
+if not ord_df.empty:
+    cancelled = ord_df[~ord_df["is_actual"]]
+    if not cancelled.empty:
+        d_cancelled = cancelled.groupby("day").agg(count=("srid", "count")).reset_index()
+        fig5 = px.bar(d_cancelled, x="day", y="count", color_discrete_sequence=["#F59E0B"])
+        fig5.update_layout(margin=dict(t=10, b=10), height=320, xaxis_title="День")
+        st.plotly_chart(fig5, use_container_width=True)
+    else:
+        st.info("Отменённых заказов нет")
 else:
-    st.info("Недостаточно данных для расчёта % выкупа")
+    st.info("Нет данных")
