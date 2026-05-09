@@ -32,12 +32,13 @@ pg_engine = init_db(PG_URL)
 PgSession = get_session_factory(pg_engine)
 
 with SqliteSession() as src, PgSession() as dst:
+    dst.execute(text("SET statement_timeout = 0"))
     # Мигрируем заказы
     orders = src.execute(text("SELECT * FROM orders")).fetchall()
     order_cols = list(src.execute(text("SELECT * FROM orders LIMIT 0")).keys())
     print(f"Миграция {len(orders)} заказов...")
     if orders:
-        dst.execute(text("DELETE FROM orders"))
+        dst.execute(text("TRUNCATE TABLE orders"))
         placeholders = ", ".join(f":{c}" for c in order_cols)
         col_str = ", ".join(order_cols)
         for row in orders:
@@ -49,7 +50,7 @@ with SqliteSession() as src, PgSession() as dst:
     sale_cols = list(src.execute(text("SELECT * FROM sales LIMIT 0")).keys())
     print(f"Миграция {len(sales)} продаж...")
     if sales:
-        dst.execute(text("DELETE FROM sales"))
+        dst.execute(text("TRUNCATE TABLE sales"))
         placeholders = ", ".join(f":{c}" for c in sale_cols)
         col_str = ", ".join(sale_cols)
         for row in sales:
@@ -61,7 +62,7 @@ with SqliteSession() as src, PgSession() as dst:
     log_cols = list(src.execute(text("SELECT * FROM sync_log LIMIT 0")).keys())
     print(f"Миграция {len(logs)} логов...")
     if logs:
-        dst.execute(text("DELETE FROM sync_log"))
+        dst.execute(text("TRUNCATE TABLE sync_log"))
         placeholders = ", ".join(f":{c}" for c in log_cols)
         col_str = ", ".join(log_cols)
         for row in logs:

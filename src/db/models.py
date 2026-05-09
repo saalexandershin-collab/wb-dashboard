@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, String, Integer, Float, Boolean,
-    DateTime, Date, Text, UniqueConstraint, create_engine
+    DateTime, Date, Text, UniqueConstraint, Index, create_engine
 )
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from datetime import datetime
@@ -51,6 +51,7 @@ class Order(Base):
 
     __table_args__ = (
         UniqueConstraint("platform", "srid", name="uq_orders_platform_srid"),
+        Index("ix_orders_platform_order_date", "platform", "order_date"),
     )
 
 
@@ -95,6 +96,7 @@ class Sale(Base):
 
     __table_args__ = (
         UniqueConstraint("platform", "sale_id", name="uq_sales_platform_sale_id"),
+        Index("ix_sales_platform_sale_date", "platform", "sale_date"),
     )
 
 
@@ -115,6 +117,12 @@ class SyncLog(Base):
 
 
 def get_engine(db_url: str):
+    if db_url.startswith("postgresql"):
+        return create_engine(
+            db_url,
+            pool_pre_ping=True,
+            connect_args={"options": "-c statement_timeout=0"},
+        )
     return create_engine(db_url, pool_pre_ping=True)
 
 

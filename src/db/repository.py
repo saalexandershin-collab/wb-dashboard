@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import select, and_, extract, delete
+from sqlalchemy import select, and_, delete
 from datetime import datetime
+import calendar
 from typing import Optional
 import pandas as pd
 
@@ -23,11 +24,14 @@ class OrderRepository:
         return len(records)
 
     def get_by_month(self, session: Session, year: int, month: int, platform: str = "wb") -> pd.DataFrame:
+        date_from = datetime(year, month, 1)
+        last_day = calendar.monthrange(year, month)[1]
+        date_to = datetime(year, month, last_day, 23, 59, 59)
         stmt = select(Order).where(
             and_(
                 Order.platform == platform,
-                extract("year", Order.order_date) == year,
-                extract("month", Order.order_date) == month,
+                Order.order_date >= date_from,
+                Order.order_date <= date_to,
             )
         )
         rows = session.execute(stmt).scalars().all()
@@ -51,11 +55,14 @@ class SaleRepository:
         return len(records)
 
     def get_by_month(self, session: Session, year: int, month: int, platform: str = "wb") -> pd.DataFrame:
+        date_from = datetime(year, month, 1)
+        last_day = calendar.monthrange(year, month)[1]
+        date_to = datetime(year, month, last_day, 23, 59, 59)
         stmt = select(Sale).where(
             and_(
                 Sale.platform == platform,
-                extract("year", Sale.sale_date) == year,
-                extract("month", Sale.sale_date) == month,
+                Sale.sale_date >= date_from,
+                Sale.sale_date <= date_to,
             )
         )
         rows = session.execute(stmt).scalars().all()
