@@ -9,8 +9,10 @@ from openpyxl.utils import get_column_letter
 
 from src.db.models import init_db, get_session_factory
 from src.db.repository import OrderRepository, SaleRepository
+from src.auth import require_login
 
 st.set_page_config(page_title="Таблица", page_icon="📋", layout="wide")
+require_login()
 st.title("📋 Детализация по товарам")
 
 if "database" not in st.secrets or "wildberries" not in st.secrets:
@@ -64,6 +66,11 @@ ord_df = prep_orders(df_orders)
 sal_df = prep_sales(df_sales)
 
 # ── Фильтры в боковом меню ───────────────────────────────────────────────────
+st.sidebar.markdown(f"👤 {st.session_state.get('username', '')}")
+if st.sidebar.button("Выйти"):
+    st.session_state.clear()
+    st.rerun()
+st.sidebar.markdown("---")
 st.sidebar.markdown("### Фильтры")
 
 def sidebar_filter(label, series):
