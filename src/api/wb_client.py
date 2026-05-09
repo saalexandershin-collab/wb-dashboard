@@ -4,8 +4,13 @@ from datetime import datetime
 from typing import Optional
 
 BASE_URL = "https://statistics-api.wildberries.ru"
-MIN_INTERVAL = 75  # минимум секунд между любыми двумя запросами к WB API
-_LOCK_FILE = "/tmp/wb_last_request.txt"  # сохраняем время на диск между перезапусками
+MIN_INTERVAL = 75  # минимум секунд между запросами к одному эндпоинту
+_LOCK_FILES = {
+    "orders": "/tmp/wb_last_orders.txt",
+    "sales":  "/tmp/wb_last_sales.txt",
+    "stocks": "/tmp/wb_last_stocks.txt",
+}
+_LOCK_FILE = "/tmp/wb_last_request.txt"  # legacy, оставляем для совместимости
 
 
 class WBApiError(Exception):
@@ -19,43 +24,45 @@ class WBClient:
         self.session = requests.Session()
         self.session.headers.update({"Authorization": token})
 
-    def _last_request_time(self) -> float:
+    def _last_request_time(self, key: str = "default") -> float:
+        lock_file = _LOCK_FILES.get(key, _LOCK_FILE)
         try:
-            with open(_LOCK_FILE) as f:
+            with open(lock_file) as f:
                 return float(f.read().strip())
         except Exception:
             return 0.0
 
-    def _save_request_time(self):
+    def _save_request_time(self, key: str = "default"):
+        lock_file = _LOCK_FILES.get(key, _LOCK_FILE)
         try:
-            with open(_LOCK_FILE, "w") as f:
+            with open(lock_file, "w") as f:
                 f.write(str(time.time()))
         except Exception:
             pass
 
-    def _wait_if_needed(self, on_progress=None):
-        elapsed = time.time() - self._last_request_time()
+    def _wait_if_needed(self, key: str = "default", on_progress=None):
+        elapsed = time.time() - self._last_request_time(key)
         if elapsed < MIN_INTERVAL:
             wait = int(MIN_INTERVAL - elapsed + 2)
             if on_progress:
                 on_progress(f"Жду {wait} сек перед следующим запросом (лимит WB API)...")
             time.sleep(wait)
 
-    def _get(self, path: str, params: dict, on_progress=None) -> list[dict]:
-        self._wait_if_needed(on_progress=on_progress)
+    def _get(self, path: str, params: dict, key: str = "default", on_progress=None) -> list[dict]:
+        self._wait_if_needed(key=key, on_progress=on_progress)
         url = f"{BASE_URL}{path}"
-        self._save_request_time()
+        self._save_request_time(key)
         response = self.session.get(url, params=params, timeout=60)
 
         if response.status_code == 401:
             raise WBApiError("Неверный токен WB API. Проверьте токен в настройках.")
         if response.status_code == 429:
             retry_after = int(response.headers.get("X-Ratelimit-Reset", response.headers.get("Retry-After", 90)))
-            retry_after = min(retry_after, 120)  # ждём не более 2 минут за раз
+            retry_after = min(retry_after, 120)
             if on_progress:
                 on_progress(f"WB API вернул 429 — жду {retry_after} сек и повторяю...")
             time.sleep(retry_after)
-            self._save_request_time()
+            self._save_request_time(key)
             response = self.session.get(url, params=params, timeout=60)
             if response.status_code == 429:
                 reset = int(response.headers.get("X-Ratelimit-Reset", 300))
@@ -75,6 +82,7 @@ class WBClient:
         return self._get(
             "/api/v1/supplier/orders",
             {"dateFrom": date_from.strftime("%Y-%m-%dT%H:%M:%S"), "flag": flag},
+            key="orders",
             on_progress=on_progress,
         )
 
@@ -82,6 +90,7 @@ class WBClient:
         return self._get(
             "/api/v1/supplier/stocks",
             {"dateFrom": date_from.strftime("%Y-%m-%dT%H:%M:%S")},
+            key="stocks",
             on_progress=on_progress,
         )
 
@@ -89,6 +98,7 @@ class WBClient:
         return self._get(
             "/api/v1/supplier/sales",
             {"dateFrom": date_from.strftime("%Y-%m-%dT%H:%M:%S"), "flag": flag},
+            key="sales",
             on_progress=on_progress,
         )
 
