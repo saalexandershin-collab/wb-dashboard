@@ -151,8 +151,8 @@ class FinancialReportRepository:
         stmt = select(FinancialReport).where(
             and_(
                 FinancialReport.platform == platform,
-                FinancialReport.create_dt >= date_from,
-                FinancialReport.create_dt <= date_to,
+                FinancialReport.date_from >= date_from,
+                FinancialReport.date_from <= date_to,
             )
         )
         rows = session.execute(stmt).scalars().all()
