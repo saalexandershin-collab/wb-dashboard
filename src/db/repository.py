@@ -252,7 +252,7 @@ class OzonTransactionRepository:
             return pd.DataFrame()
         df = pd.DataFrame([_ozon_tx_to_dict(r) for r in rows])
 
-        # Finance API often omits offer_id in items — fill from postings via posting_number
+        # Finance API often omits offer_id — fill from postings via posting_number
         missing_mask = df["offer_id"].fillna("") == ""
         pn_missing = df.loc[missing_mask, "posting_number"].dropna().unique().tolist()
         if pn_missing:
@@ -268,6 +268,25 @@ class OzonTransactionRepository:
                 df.loc[name_missing, "product_name"] = (
                     df.loc[name_missing, "posting_number"].map(pmap_name).fillna("")
                 )
+
+        # Fallback: if offer_id still missing but product_name is known,
+        # look up offer_id from any posting with the same product_name
+        still_missing = df["offer_id"].fillna("") == ""
+        if still_missing.any():
+            known_names = df.loc[still_missing, "product_name"].dropna().unique().tolist()
+            known_names = [n for n in known_names if n]
+            if known_names:
+                name_stmt = select(OzonPosting.product_name, OzonPosting.offer_id).where(
+                    OzonPosting.product_name.in_(known_names),
+                    OzonPosting.offer_id.isnot(None),
+                    OzonPosting.offer_id != "",
+                ).distinct()
+                name_rows = session.execute(name_stmt).all()
+                if name_rows:
+                    nmap = {r.product_name: r.offer_id for r in name_rows}
+                    df.loc[still_missing, "offer_id"] = (
+                        df.loc[still_missing, "product_name"].map(nmap).fillna("")
+                    )
         return df
 
 
