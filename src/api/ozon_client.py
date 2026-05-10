@@ -40,7 +40,7 @@ class OzonClient:
                          on_progress=None) -> list[dict]:
         results = []
         offset = 0
-        limit = 1000
+        limit = 100
         while True:
             body = {
                 "dir": "asc",
@@ -68,7 +68,7 @@ class OzonClient:
                          on_progress=None) -> list[dict]:
         results = []
         offset = 0
-        limit = 1000
+        limit = 100
         while True:
             body = {
                 "dir": "asc",
@@ -95,7 +95,7 @@ class OzonClient:
     def get_stocks(self, on_progress=None) -> list[dict]:
         results = []
         offset = 0
-        limit = 1000
+        limit = 500
         while True:
             body = {"limit": limit, "offset": offset, "warehouse_type": "ALL"}
             data = self._post("/v2/analytics/stock_on_warehouses", body, on_progress)
