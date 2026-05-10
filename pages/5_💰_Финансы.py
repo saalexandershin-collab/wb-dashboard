@@ -6,10 +6,11 @@ import calendar
 
 from src.db.models import init_db, get_session_factory
 from src.db.repository import FinancialReportRepository
-from src.auth import require_login
+from src.auth import require_login, require_role
 
 st.set_page_config(page_title="Финансы", page_icon="💰", layout="wide")
 require_login()
+require_role(["admin"])
 st.title("💰 Финансовые отчёты")
 
 if "database" not in st.secrets:
