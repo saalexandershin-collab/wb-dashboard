@@ -1,19 +1,19 @@
 import streamlit as st
-from src.auth import get_authenticator, set_role, get_role
+from src.auth import get_authenticator, set_role, get_role, do_logout
 
 st.set_page_config(page_title="WB Дашборд", page_icon="📦", layout="wide")
 
-# get_authenticator() проверяет cookie и рендерит форму если нужно.
-# Возвращает (name, True/False/None, username).
-# True  — вошёл (из формы или cookie)
-# False — неверный пароль
-# None  — форма показана, ждём ввода
 authenticator = get_authenticator()
+
+# login() проверяет cookie (авто-вход) или показывает форму.
+# Возвращает (name, True/False/None, username).
 name, auth_status, username = authenticator.login("🔐 Вход в дашборд", "main")
 
 if auth_status:
-    # Устанавливаем роль на каждом запросе — username всегда актуален из stauth
-    set_role(username or st.session_state.get("username", ""))
+    # username может прийти из cookie (восстановление сессии)
+    # или из формы — в обоих случаях stauth кладёт его в session_state
+    resolved_username = username or st.session_state.get("username", "")
+    set_role(resolved_username)
     role = get_role()
 
     pages = [
@@ -37,14 +37,17 @@ if auth_status:
     pg = st.navigation(pages)
 
     st.sidebar.markdown("---")
-    st.sidebar.markdown(f"👤 {st.session_state.get('username', '')}")
-    # logout() рендерит кнопку «Выйти» и обрабатывает клик сам —
-    # включая удаление cookie. Нельзя вызывать внутри другого button-колбэка.
-    authenticator.logout("Выйти", "sidebar")
+    st.sidebar.markdown(f"👤 {resolved_username}")
+
+    # Кнопка выхода — в основном потоке скрипта, не в on_click-колбэке.
+    # do_logout() удаляет cookie напрямую через stauth, затем чистит session_state.
+    if st.sidebar.button("Выйти", type="secondary"):
+        do_logout(authenticator)
+        st.rerun()
 
     pg.run()
 
 elif auth_status is False:
     st.error("Неверный логин или пароль")
 
-# Если auth_status is None — форма уже показана, ждём ввода, ничего не делаем
+# auth_status is None — форма уже отрисована, ждём ввода
