@@ -8,7 +8,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
 from src.db.models import init_db, get_session_factory
-from src.db.repository import OzonPostingRepository
+from src.db.repository import OzonPostingRepository, OzonTransactionRepository
 
 st.title("📋 Детализация по товарам Ozon")
 
@@ -29,79 +29,94 @@ def load(db_url, year, month):
     engine = init_db(db_url)
     Session = get_session_factory(engine)
     with Session() as session:
-        return OzonPostingRepository().get_by_month(session, year, month)
+        posts = OzonPostingRepository().get_by_month(session, year, month)
+        txs   = OzonTransactionRepository().get_by_month(session, year, month)
+    return posts, txs
 
-df = load(DB_URL, year, month)
+posts, txs = load(DB_URL, year, month)
 
-if df.empty:
+if posts.empty and txs.empty:
     st.warning("Нет данных за выбранный период.")
     st.stop()
 
-df["created_at"] = pd.to_datetime(df["created_at"])
-df["day"] = df["created_at"].dt.day
+if not posts.empty:
+    posts["created_at"] = pd.to_datetime(posts["created_at"])
+    posts["day"] = posts["created_at"].dt.day
+
+if not txs.empty:
+    txs["operation_date"] = pd.to_datetime(txs["operation_date"])
+    txs["day"] = txs["operation_date"].dt.day
 
 # ── Фильтры ───────────────────────────────────────────────────────────────────
 st.sidebar.markdown("---")
 st.sidebar.markdown("### Фильтры")
 
-def sidebar_filter(label, series):
-    vals = sorted(series.dropna().unique().tolist())
-    return st.sidebar.multiselect(label, vals)
-
-sel_offers = sidebar_filter("Артикул (offer_id)", df["offer_id"])
-sel_wh     = sidebar_filter("Склад", df["warehouse_name"])
+all_offers = sorted(set(
+    (posts["offer_id"].dropna().unique().tolist() if not posts.empty else []) +
+    (txs["offer_id"].dropna().unique().tolist() if not txs.empty else [])
+))
+sel_offers = st.sidebar.multiselect("Артикул (offer_id)", all_offers)
 
 if sel_offers:
-    df = df[df["offer_id"].isin(sel_offers)]
-if sel_wh:
-    df = df[df["warehouse_name"].isin(sel_wh)]
+    if not posts.empty:
+        posts = posts[posts["offer_id"].isin(sel_offers)]
+    if not txs.empty:
+        txs = txs[txs["offer_id"].isin(sel_offers)]
 
 # ── Метрика ───────────────────────────────────────────────────────────────────
 st.markdown("### Показатель")
 metric = st.radio(
     "Выберите показатель:",
-    ["Заказы (шт.)", "Выкупы (шт.)", "Отмены (шт.)", "% выкупа"],
+    ["Заказы (шт.)", "Выкупы (шт.)", "Отмены (шт.)"],
     horizontal=True,
 )
 
 days_in_month = calendar.monthrange(year, month)[1]
 all_days = list(range(1, days_in_month + 1))
 
-def build_pivot(mask, item_col="offer_id"):
-    sub = df[mask]
+def build_pivot_posts(mask, qty_col="quantity"):
+    sub = posts[mask] if not posts.empty else pd.DataFrame()
     if sub.empty:
         return pd.DataFrame()
-    piv = sub.groupby([item_col, "day"]).size().reset_index(name="val")
-    piv = piv.pivot(index=item_col, columns="day", values="val").reindex(columns=all_days).fillna(0)
+    piv = (sub.groupby(["offer_id", "day"])[qty_col].sum()
+             .reset_index()
+             .pivot(index="offer_id", columns="day", values=qty_col)
+             .reindex(columns=all_days).fillna(0))
     return piv
 
-mask_orders = ~df["is_cancelled"]
-mask_sold   = (~df["is_cancelled"]) & (df["status"] == "delivered")
-mask_cancel = df["is_cancelled"]
+def build_pivot_tx():
+    """Выкупы из транзакций — каждая строка = 1 единица."""
+    sub = txs[txs["operation_type"] == "OperationAgentDeliveredToCustomer"] if not txs.empty else pd.DataFrame()
+    if sub.empty:
+        return pd.DataFrame()
+    piv = (sub.groupby(["offer_id", "day"]).size()
+             .reset_index(name="qty")
+             .pivot(index="offer_id", columns="day", values="qty")
+             .reindex(columns=all_days).fillna(0))
+    return piv
 
 if metric == "Заказы (шт.)":
-    piv = build_pivot(mask_orders)
+    piv = build_pivot_posts(~posts["is_cancelled"]) if not posts.empty else pd.DataFrame()
+    name_source = posts
 elif metric == "Выкупы (шт.)":
-    piv = build_pivot(mask_sold)
-elif metric == "Отмены (шт.)":
-    piv = build_pivot(mask_cancel)
+    piv = build_pivot_tx()
+    name_source = txs
 else:
-    o = build_pivot(mask_orders)
-    s = build_pivot(mask_sold)
-    all_idx = o.index.union(s.index)
-    o = o.reindex(all_idx, fill_value=0)
-    s = s.reindex(all_idx, fill_value=0)
-    piv = (s / o.replace(0, float("nan")) * 100).round(1).fillna(0)
+    piv = build_pivot_posts(posts["is_cancelled"]) if not posts.empty else pd.DataFrame()
+    name_source = posts
 
-if piv.empty:
+if piv is None or piv.empty:
     st.info("Нет данных.")
     st.stop()
 
 piv = piv.reset_index()
 
 # Добавляем название товара
-name_map = df.drop_duplicates("offer_id").set_index("offer_id")["product_name"]
-piv["product_name"] = piv["offer_id"].map(name_map).fillna("")
+if not name_source.empty and "product_name" in name_source.columns:
+    name_map = name_source.drop_duplicates("offer_id").set_index("offer_id")["product_name"]
+    piv["product_name"] = piv["offer_id"].map(name_map).fillna("")
+else:
+    piv["product_name"] = ""
 
 day_cols = [c for c in piv.columns if isinstance(c, int)]
 piv["Итого"] = piv[day_cols].sum(axis=1).round(1)
@@ -117,6 +132,9 @@ piv = pd.concat([piv, pd.DataFrame([total_row])], ignore_index=True)
 
 display_cols = ["offer_id", "product_name"] + str_day_cols + ["Итого"]
 piv = piv[display_cols].rename(columns={"offer_id": "Артикул", "product_name": "Название"})
+
+if metric == "Выкупы (шт.)":
+    st.caption("Выкупы — по дате фактической доставки покупателю (транзакционная модель Ozon)")
 
 st.markdown(f"**{metric}** — {calendar.month_name[month]} {year}")
 st.dataframe(piv, use_container_width=True, height=500)

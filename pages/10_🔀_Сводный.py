@@ -5,7 +5,7 @@ import calendar
 from datetime import date
 
 from src.db.models import init_db, get_session_factory
-from src.db.repository import OrderRepository, SaleRepository, OzonPostingRepository
+from src.db.repository import OrderRepository, SaleRepository, OzonPostingRepository, OzonTransactionRepository
 
 st.title("🔀 Сводный отчёт WB + Ozon")
 
@@ -32,9 +32,10 @@ def load_all(db_url, year, month):
         wb_orders = OrderRepository().get_by_month(session, year, month, platform="wb")
         wb_sales  = SaleRepository().get_by_month(session, year, month, platform="wb")
         oz_posts  = OzonPostingRepository().get_by_month(session, year, month)
-    return wb_orders, wb_sales, oz_posts
+        oz_txs    = OzonTransactionRepository().get_by_month(session, year, month)
+    return wb_orders, wb_sales, oz_posts, oz_txs
 
-wb_orders, wb_sales, oz_posts = load_all(DB_URL, year, month)
+wb_orders, wb_sales, oz_posts, oz_txs = load_all(DB_URL, year, month)
 
 # ── Агрегаты WB ───────────────────────────────────────────────────────────────
 if not wb_orders.empty:
@@ -62,14 +63,22 @@ else:
 if not oz_posts.empty:
     oz_posts["created_at"] = pd.to_datetime(oz_posts["created_at"])
     oz_posts["day"] = oz_posts["created_at"].dt.day
-    oz_orders  = oz_posts[~oz_posts["is_cancelled"]]
-    oz_sold    = oz_posts[(~oz_posts["is_cancelled"]) & (oz_posts["status"] == "delivered")]
+    oz_orders    = oz_posts[~oz_posts["is_cancelled"]]
     oz_qty_orders    = int(oz_orders["quantity"].sum())
-    oz_qty_sold      = int(oz_sold["quantity"].sum())
     oz_qty_cancelled = int(oz_posts[oz_posts["is_cancelled"]]["quantity"].sum())
 else:
-    oz_qty_orders = oz_qty_sold = oz_qty_cancelled = 0
-    oz_orders = oz_sold = pd.DataFrame()
+    oz_qty_orders = oz_qty_cancelled = 0
+    oz_orders = pd.DataFrame()
+
+# Выкупы Ozon — транзакционная модель (дата фактической доставки)
+if not oz_txs.empty:
+    oz_txs["operation_date"] = pd.to_datetime(oz_txs["operation_date"])
+    oz_txs["day"] = oz_txs["operation_date"].dt.day
+    oz_sold_tx   = oz_txs[oz_txs["operation_type"] == "OperationAgentDeliveredToCustomer"]
+    oz_qty_sold  = len(oz_sold_tx)
+else:
+    oz_sold_tx  = pd.DataFrame()
+    oz_qty_sold = 0
 
 total_orders = wb_qty_orders + oz_qty_orders
 total_sold   = wb_qty_sold + oz_qty_sold
@@ -132,8 +141,8 @@ wb_by_day = (
     if not wb_sold.empty else pd.Series(0, index=all_days)
 )
 oz_by_day = (
-    oz_sold.groupby("day")["quantity"].sum().reindex(all_days, fill_value=0)
-    if not oz_sold.empty else pd.Series(0, index=all_days)
+    oz_sold_tx.groupby("day").size().reindex(all_days, fill_value=0)
+    if not oz_sold_tx.empty else pd.Series(0, index=all_days)
 )
 
 fig_days = go.Figure()
