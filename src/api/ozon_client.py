@@ -38,8 +38,9 @@ class OzonClient:
     # ── Заказы FBO ────────────────────────────────────────────────────────────
     def get_postings_fbo(self, date_from: datetime, date_to: datetime,
                          on_progress=None) -> list[dict]:
+        # FBO uses cursor-based pagination and returns postings at top level
         results = []
-        offset = 0
+        cursor = ""
         limit = 100
         while True:
             body = {
@@ -50,17 +51,18 @@ class OzonClient:
                     "status": "",
                 },
                 "limit": limit,
-                "offset": offset,
                 "with": {"analytics_data": True, "financial_data": True},
             }
+            if cursor:
+                body["cursor"] = cursor
             data = self._post("/v3/posting/fbo/list", body, on_progress)
-            rows = data.get("result", {}).get("postings", [])
+            rows = data.get("postings", [])
             results.extend(rows)
             if on_progress:
-                on_progress(f"  FBO offset={offset}: получено {len(rows)} (итого {len(results)})")
-            if len(rows) < limit:
+                on_progress(f"  FBO cursor={cursor[:12] or 'start'}: получено {len(rows)} (итого {len(results)})")
+            if not data.get("has_next") or not rows:
                 break
-            offset += limit
+            cursor = data.get("cursor", "")
         return results
 
     # ── Заказы FBS ────────────────────────────────────────────────────────────
