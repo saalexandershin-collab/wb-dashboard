@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    Column, String, Integer, Float, Boolean,
+    Column, String, Integer, BigInteger, Float, Boolean,
     DateTime, Date, Text, UniqueConstraint, Index, create_engine
 )
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
@@ -149,8 +149,8 @@ class FinancialReport(Base):
     platform = Column(String(20), nullable=False, default="wb")
 
     # Идентификаторы
-    rrd_id = Column(Integer)                    # уникальный ID строки отчёта
-    realizationreport_id = Column(Integer)      # ID недельного отчёта
+    rrd_id = Column(BigInteger)                 # уникальный ID строки отчёта (>2B, нужен BIGINT)
+    realizationreport_id = Column(BigInteger)   # ID недельного отчёта
 
     # Период отчёта
     date_from = Column(Date)
