@@ -250,7 +250,25 @@ class OzonTransactionRepository:
         rows = session.execute(stmt).scalars().all()
         if not rows:
             return pd.DataFrame()
-        return pd.DataFrame([_ozon_tx_to_dict(r) for r in rows])
+        df = pd.DataFrame([_ozon_tx_to_dict(r) for r in rows])
+
+        # Finance API often omits offer_id in items — fill from postings via posting_number
+        missing_mask = df["offer_id"].fillna("") == ""
+        pn_missing = df.loc[missing_mask, "posting_number"].dropna().unique().tolist()
+        if pn_missing:
+            p_stmt = select(OzonPosting).where(OzonPosting.posting_number.in_(pn_missing))
+            postings = session.execute(p_stmt).scalars().all()
+            if postings:
+                pmap_offer = {p.posting_number: p.offer_id or "" for p in postings}
+                pmap_name  = {p.posting_number: p.product_name or "" for p in postings}
+                df.loc[missing_mask, "offer_id"] = (
+                    df.loc[missing_mask, "posting_number"].map(pmap_offer).fillna("")
+                )
+                name_missing = missing_mask & (df["product_name"].fillna("") == "")
+                df.loc[name_missing, "product_name"] = (
+                    df.loc[name_missing, "posting_number"].map(pmap_name).fillna("")
+                )
+        return df
 
 
 def _order_to_dict(o: Order) -> dict:
