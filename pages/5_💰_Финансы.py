@@ -6,10 +6,8 @@ import calendar
 
 from src.db.models import init_db, get_session_factory
 from src.db.repository import FinancialReportRepository
-from src.auth import require_login, require_role
+from src.auth import require_role
 
-st.set_page_config(page_title="Финансы", page_icon="💰", layout="wide")
-require_login()
 require_role(["admin"])
 st.title("💰 Финансовые отчёты")
 
@@ -28,11 +26,6 @@ month = col_m.selectbox("Месяц", list(range(1, 13)), index=today.month - 1,
                         format_func=lambda m: calendar.month_name[m])
 st.sidebar.markdown("---")
 st.sidebar.caption(f"Период: {calendar.month_name[month]} {year}")
-st.sidebar.markdown("---")
-st.sidebar.markdown(f"👤 {st.session_state.get('username', '')}")
-if st.sidebar.button("Выйти"):
-    st.session_state.clear()
-    st.rerun()
 
 # ── Загрузка данных ───────────────────────────────────────────────────────────
 @st.cache_data(ttl=300, show_spinner="Загружаю финансовые данные...")

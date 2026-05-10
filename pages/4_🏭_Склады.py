@@ -7,10 +7,6 @@ from sqlalchemy import text
 
 from src.db.models import init_db, get_session_factory
 from src.db.repository import StockRepository, SaleRepository
-from src.auth import require_login
-
-st.set_page_config(page_title="Склады", page_icon="🏭", layout="wide")
-require_login()
 st.title("🏭 Остатки и продажи по складам FBO")
 
 if "database" not in st.secrets:
@@ -18,11 +14,6 @@ if "database" not in st.secrets:
     st.stop()
 
 DB_URL = st.secrets["database"]["url"]
-
-st.sidebar.markdown(f"👤 {st.session_state.get('username', '')}")
-if st.sidebar.button("Выйти"):
-    st.session_state.clear()
-    st.rerun()
 
 DAYS_ANALYSIS = 14
 GREEN_DAYS    = 30

@@ -6,22 +6,13 @@ from sqlalchemy import select
 
 from src.db.models import init_db, get_session_factory, SyncLog
 from src.db.repository import SyncLogRepository
-from src.auth import require_login
-
 MSK = timezone(timedelta(hours=3))
 
-st.set_page_config(page_title="Настройки", page_icon="⚙️", layout="wide")
-require_login()
 st.title("⚙️ Настройки")
 
 # ── Статус конфигурации ───────────────────────────────────────────────────────
 has_db = "database" in st.secrets and st.secrets["database"].get("url")
 has_token = "wildberries" in st.secrets and st.secrets["wildberries"].get("api_token")
-
-st.sidebar.markdown(f"👤 {st.session_state.get('username', '')}")
-if st.sidebar.button("Выйти"):
-    st.session_state.clear()
-    st.rerun()
 
 col_s1, col_s2 = st.columns(2)
 col_s1.metric("База данных", "✅ Подключена" if has_db else "❌ Не настроена")
