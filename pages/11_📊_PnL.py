@@ -57,47 +57,59 @@ s = lambda col: float(col.fillna(0).sum())
 
 
 # ── WB: чистая выплата ────────────────────────────────────────────────────────
-# ppvz_for_pay = выплата за продажи/возвраты (уже за вычетом комиссии WB)
-# delivery_rub, storage_fee, penalty, additional_payment — отдельные строки
+# ppvz_for_pay = выплата за продажи/возвраты (уже за вычетом комиссии WB + эквайринга)
+# delivery_rub, storage_fee, penalty хранятся как ПОЛОЖИТЕЛЬНЫЕ числа → вычитаем
 wb_empty = df_wb.empty
 if not wb_empty:
-    wb_ppvz      = s(df_wb["ppvz_for_pay"])
-    wb_delivery  = s(df_wb["delivery_rub"])          # < 0 — логистика
-    wb_storage   = s(df_wb["storage_fee"])            # < 0 — хранение
-    wb_penalties = s(df_wb["penalty"])                # < 0 — штрафы
-    wb_other     = s(df_wb["additional_payment"])     # ± прочее
-    wb_commission= s(df_wb["ppvz_sales_commission"])  # < 0 — комиссия WB
-    wb_acquiring = s(df_wb["acquiring_fee"])          # < 0 — эквайринг
-    # Оборот (ценники × кол-во проданного)
     sales_mask   = df_wb["doc_type_name"] == "Продажа"
-    wb_revenue   = s(
-        (df_wb.loc[sales_mask, "retail_price_withdisc_rub"] *
-         df_wb.loc[sales_mask, "quantity"].clip(lower=0))
-    )
-    wb_qty_sold  = int(df_wb.loc[sales_mask, "quantity"].clip(lower=0).sum())
-    # Нетто WB = ppvz_for_pay + все прочие начисления/удержания
-    wb_net = wb_ppvz + wb_delivery + wb_storage + wb_penalties + wb_other
+    returns_mask = df_wb["doc_type_name"] == "Возврат"
+
+    wb_ppvz_sales   = s(df_wb.loc[sales_mask,   "ppvz_for_pay"])   # + выплата за продажи
+    wb_ppvz_returns = s(df_wb.loc[returns_mask,  "ppvz_for_pay"])   # + / − за возвраты
+    wb_ppvz         = wb_ppvz_sales + wb_ppvz_returns
+
+    wb_delivery  = s(df_wb["delivery_rub"])      # + в базе, но это РАСХОД (логистика)
+    wb_storage   = s(df_wb["storage_fee"])        # + в базе, но это РАСХОД (хранение)
+    wb_penalties = s(df_wb["penalty"])            # + в базе, но это РАСХОД (штрафы)
+    wb_other     = s(df_wb["additional_payment"]) # ± прочее (хранится со знаком)
+
+    wb_qty_sold     = int(df_wb.loc[sales_mask,   "quantity"].clip(lower=0).sum())
+    wb_qty_returned = int(df_wb.loc[returns_mask,  "quantity"].fillna(0).abs().sum())
+
+    # Фактическая выплата WB = ppvz − логистика − хранение − штрафы ± прочее
+    wb_net = wb_ppvz - wb_delivery - wb_storage - wb_penalties + wb_other
 else:
-    wb_revenue = wb_ppvz = wb_delivery = wb_storage = 0.0
-    wb_penalties = wb_other = wb_commission = wb_acquiring = wb_net = 0.0
-    wb_qty_sold = 0
+    wb_ppvz = wb_ppvz_sales = wb_ppvz_returns = 0.0
+    wb_delivery = wb_storage = wb_penalties = wb_other = wb_net = 0.0
+    wb_qty_sold = wb_qty_returned = 0
 
 
 # ── Ozon: чистая выплата ──────────────────────────────────────────────────────
+# amount хранится со знаком: + для продаж, − для возвратов и удержаний
+RETURN_OPS_SET = {
+    "OperationReturnGoodsFBSofRMS", "OperationReturnGoodsFBO",
+    "OperationItemReturn", "OperationReturnGoodsFBSofMerchant",
+    "OperationReturnGoodsFBSofRMSReject", "OperationLagTimeReturnAfterDelivery",
+}
 oz_empty = df_oz.empty
 if not oz_empty:
-    oz_sales_df  = df_oz[df_oz["operation_type"] == "OperationAgentDeliveredToCustomer"]
-    oz_qty_sold  = oz_sales_df.shape[0]                       # 1 строка = 1 единица
-    oz_gross     = s(oz_sales_df["amount"]) + abs(s(oz_sales_df["accruals_for_sale"].fillna(0))) + \
-                   abs(s(oz_sales_df["delivery_charge"].fillna(0)))  # восстановленный оборот
-    oz_commission= abs(s(oz_sales_df["accruals_for_sale"].fillna(0)))
-    oz_logistics = abs(s(oz_sales_df["delivery_charge"].fillna(0)))
-    oz_acquiring = abs(s(df_oz[df_oz["operation_type_name"].str.contains("эквайр", case=False, na=False)]["amount"]))
-    # Нетто Ozon = сумма ВСЕХ транзакций (продажи + возвраты + прочие удержания)
-    oz_net       = s(df_oz["amount"])
+    oz_sales_mask   = df_oz["operation_type"] == "OperationAgentDeliveredToCustomer"
+    oz_returns_mask = df_oz["operation_type"].isin(RETURN_OPS_SET) | \
+                      df_oz["operation_type"].str.contains("return|Return", na=False)
+    oz_other_mask   = ~oz_sales_mask & ~oz_returns_mask
+
+    oz_sales_amount   = s(df_oz.loc[oz_sales_mask,   "amount"])  # + выплата за доставленные
+    oz_returns_amount = s(df_oz.loc[oz_returns_mask,  "amount"])  # − удержание за возвраты
+    oz_other_amount   = s(df_oz.loc[oz_other_mask,    "amount"])  # − прочие удержания
+
+    oz_qty_sold     = int(oz_sales_mask.sum())
+    oz_qty_returned = int(oz_returns_mask.sum())
+
+    # Нетто Ozon = сумма ВСЕХ транзакций
+    oz_net = s(df_oz["amount"])
 else:
-    oz_gross = oz_commission = oz_logistics = oz_acquiring = oz_net = 0.0
-    oz_qty_sold = 0
+    oz_sales_amount = oz_returns_amount = oz_other_amount = oz_net = 0.0
+    oz_qty_sold = oz_qty_returned = 0
 
 
 # ── Расчёт P&L ────────────────────────────────────────────────────────────────
@@ -116,9 +128,9 @@ st.markdown(f"### {calendar.month_name[month]} {year}")
 
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("Выплата WB",   f"{wb_net:,.0f} ₽".replace(",", " "),
-          help="ppvz_for_pay + логистика + хранение + штрафы + прочее")
+          help="ppvz_for_pay (продажи + возвраты) − логистика − хранение − штрафы")
 k2.metric("Выплата Ozon", f"{oz_net:,.0f} ₽".replace(",", " "),
-          help="Сумма всех транзакций финансового API Ozon")
+          help="Сумма всех транзакций финансового API Ozon (продажи + возвраты + прочие удержания)")
 k3.metric("Итого выплат", f"{total_payout:,.0f} ₽".replace(",", " "))
 k4.metric(f"Налоги {total_tax_pct:.0f}%", f"−{tax_total:,.0f} ₽".replace(",", " "),
           delta=f"{net_income:,.0f} ₽ чистыми".replace(",", " "),
@@ -137,27 +149,28 @@ def fmt(v: float, sign: bool = False) -> str:
 rows = []
 
 # Доходы — WB
-rows.append({"Статья": "🏪 **Wildberries**",         "Сумма (₽)": "",           "Тип": "header"})
-rows.append({"Статья": "   Оборот WB (ценники)",      "Сумма (₽)": fmt(wb_revenue), "Тип": "detail"})
-rows.append({"Статья": "   Комиссия WB",               "Сумма (₽)": fmt(wb_commission), "Тип": "detail"})
-rows.append({"Статья": "   Логистика WB",              "Сумма (₽)": fmt(wb_delivery), "Тип": "detail"})
-rows.append({"Статья": "   Хранение WB",               "Сумма (₽)": fmt(wb_storage),  "Тип": "detail"})
-if abs(wb_penalties) > 0:
-    rows.append({"Статья": "   Штрафы WB",             "Сумма (₽)": fmt(wb_penalties), "Тип": "detail"})
+rows.append({"Статья": "🏪 **Wildberries**",                           "Сумма (₽)": "",                     "Тип": "header"})
+rows.append({"Статья": "   Выплата за продажи (ppvz_for_pay)",          "Сумма (₽)": fmt(wb_ppvz_sales),    "Тип": "detail"})
+if abs(wb_ppvz_returns) > 0:
+    rows.append({"Статья": "   Возвраты (ppvz_for_pay)",                "Сумма (₽)": fmt(wb_ppvz_returns),  "Тип": "detail"})
+rows.append({"Статья": "   − Логистика (доставка/возвраты)",            "Сумма (₽)": fmt(-wb_delivery),     "Тип": "detail"})
+rows.append({"Статья": "   − Хранение",                                 "Сумма (₽)": fmt(-wb_storage),      "Тип": "detail"})
+if wb_penalties > 0:
+    rows.append({"Статья": "   − Штрафы",                              "Сумма (₽)": fmt(-wb_penalties),    "Тип": "detail"})
 if abs(wb_other) > 0:
-    rows.append({"Статья": "   Прочие начисления WB",  "Сумма (₽)": fmt(wb_other),    "Тип": "detail"})
-rows.append({"Статья": "**Итого выплата WB**",          "Сумма (₽)": fmt(wb_net),      "Тип": "subtotal"})
+    rows.append({"Статья": "   ± Прочее",                              "Сумма (₽)": fmt(wb_other),         "Тип": "detail"})
+rows.append({"Статья": "**Итого выплата WB**",                          "Сумма (₽)": fmt(wb_net),           "Тип": "subtotal"})
 
 rows.append({"Статья": "", "Сумма (₽)": "", "Тип": "spacer"})
 
 # Доходы — Ozon
-rows.append({"Статья": "🟦 **Ozon**",                  "Сумма (₽)": "",            "Тип": "header"})
-rows.append({"Статья": "   Оборот Ozon (восст.)",       "Сумма (₽)": fmt(oz_gross), "Тип": "detail"})
-rows.append({"Статья": "   Комиссия Ozon",              "Сумма (₽)": fmt(-oz_commission), "Тип": "detail"})
-rows.append({"Статья": "   Логистика Ozon",             "Сумма (₽)": fmt(-oz_logistics),  "Тип": "detail"})
-if oz_acquiring > 0:
-    rows.append({"Статья": "   Эквайринг Ozon",         "Сумма (₽)": fmt(-oz_acquiring), "Тип": "detail"})
-rows.append({"Статья": "**Итого выплата Ozon**",         "Сумма (₽)": fmt(oz_net),   "Тип": "subtotal"})
+rows.append({"Статья": "🟦 **Ozon**",                                   "Сумма (₽)": "",                     "Тип": "header"})
+rows.append({"Статья": "   Выплата за доставленные товары",             "Сумма (₽)": fmt(oz_sales_amount),   "Тип": "detail"})
+if oz_returns_amount != 0:
+    rows.append({"Статья": "   Возвраты и невыкупы",                    "Сумма (₽)": fmt(oz_returns_amount), "Тип": "detail"})
+if oz_other_amount != 0:
+    rows.append({"Статья": "   Прочие удержания (хранение, эквайринг)", "Сумма (₽)": fmt(oz_other_amount),   "Тип": "detail"})
+rows.append({"Статья": "**Итого выплата Ozon**",                        "Сумма (₽)": fmt(oz_net),            "Тип": "subtotal"})
 
 rows.append({"Статья": "", "Сумма (₽)": "", "Тип": "spacer"})
 
@@ -234,15 +247,17 @@ with col_pie:
 with col_stats:
     st.markdown("#### Ключевые показатели")
     stats = {
-        "Продано WB (шт.)":        f"{wb_qty_sold:,}".replace(",", " "),
-        "Продано Ozon (шт.)":      f"{oz_qty_sold:,}".replace(",", " "),
-        "Итого продано":           f"{wb_qty_sold + oz_qty_sold:,}".replace(",", " "),
-        "Средняя выплата WB / шт": (f"{wb_net/wb_qty_sold:,.0f} ₽".replace(",", " ")
-                                     if wb_qty_sold > 0 else "—"),
-        "Средняя выплата Ozon / шт":(f"{oz_net/oz_qty_sold:,.0f} ₽".replace(",", " ")
-                                      if oz_qty_sold > 0 else "—"),
-        "Налоговая нагрузка":      f"{tax_total/total_payout*100:.1f}%" if total_payout else "—",
-        "Чистая выручка":          f"{net_income:,.0f} ₽".replace(",", " "),
+        "Продано WB (шт.)":          f"{wb_qty_sold:,}".replace(",", " "),
+        "Возвратов WB (шт.)":        f"{wb_qty_returned:,}".replace(",", " "),
+        "Продано Ozon (шт.)":        f"{oz_qty_sold:,}".replace(",", " "),
+        "Возвратов Ozon (шт.)":      f"{oz_qty_returned:,}".replace(",", " "),
+        "Итого продано":             f"{wb_qty_sold + oz_qty_sold:,}".replace(",", " "),
+        "Средняя выплата WB / шт":   (f"{wb_net/wb_qty_sold:,.0f} ₽".replace(",", " ")
+                                       if wb_qty_sold > 0 else "—"),
+        "Средняя выплата Ozon / шт": (f"{oz_sales_amount/oz_qty_sold:,.0f} ₽".replace(",", " ")
+                                       if oz_qty_sold > 0 else "—"),
+        "Налоговая нагрузка":        f"{tax_total/total_payout*100:.1f}%" if total_payout else "—",
+        "Чистая выручка":            f"{net_income:,.0f} ₽".replace(",", " "),
     }
     for k, v in stats.items():
         st.markdown(f"**{k}:** {v}")
