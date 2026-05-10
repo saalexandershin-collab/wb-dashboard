@@ -106,7 +106,9 @@ class WBClient:
             "limit": 100000,
         }
         all_rows: list[dict] = []
+        page = 0
         while True:
+            page += 1
             self._wait_if_needed(key="finance", on_progress=on_progress)
             url = f"{BASE_URL}{path}"
             self._save_request_time("finance")
@@ -114,17 +116,27 @@ class WBClient:
             if resp.status_code == 401:
                 raise WBApiError("Неверный токен WB API.")
             if resp.status_code == 429:
-                wait = int(resp.headers.get("Retry-After", 90))
+                retry_after = int(resp.headers.get("Retry-After", resp.headers.get("X-Ratelimit-Reset", 90)))
+                retry_after = min(retry_after, 120)
                 if on_progress:
-                    on_progress(f"Лимит WB API — жду {wait} сек...")
-                time.sleep(wait)
-                continue
+                    on_progress(f"WB API 429 — жду {retry_after} сек...")
+                time.sleep(retry_after)
+                resp = self.session.get(url, params=params, timeout=120)
+                if resp.status_code == 429:
+                    reset = int(resp.headers.get("X-Ratelimit-Reset", 300))
+                    mins = max(1, round(reset / 60))
+                    raise WBApiError(
+                        f"WB API заблокировал токен на ~{mins} мин. "
+                        "Создайте новый токен или подождите."
+                    )
             if resp.status_code != 200:
                 raise WBApiError(f"Ошибка WB API {resp.status_code}: {resp.text[:300]}")
             rows = resp.json()
             if not rows:
                 break
             all_rows.extend(rows)
+            if on_progress:
+                on_progress(f"  Страница {page}: получено {len(rows)} строк (итого {len(all_rows)})")
             # Пагинация: следующая страница начинается с последнего rrd_id
             params["rrdid"] = rows[-1].get("rrd_id", 0)
             if len(rows) < params["limit"]:
