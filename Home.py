@@ -1,5 +1,5 @@
 import streamlit as st
-from src.auth import get_role
+from src.auth import get_role, logout
 
 st.set_page_config(page_title="WB Дашборд", page_icon="📦", layout="wide")
 
@@ -28,7 +28,7 @@ if st.session_state.get("authenticated"):
     st.sidebar.markdown("---")
     st.sidebar.markdown(f"👤 {st.session_state.get('username', '')}")
     if st.sidebar.button("Выйти"):
-        st.session_state.clear()
+        logout()
         st.rerun()
 
     pg.run()
