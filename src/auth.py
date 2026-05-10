@@ -20,21 +20,19 @@ def _get_credentials() -> dict:
 def get_authenticator():
     import streamlit_authenticator as stauth
     cookie_key = st.secrets.get("auth", {}).get("cookie_key", "wb_dashboard_cookie_42")
+    # stauth 0.3.3: третий аргумент называется cookie_key, не key
+    # auto_hash=False — пароли уже захешированы нами через bcrypt
     return stauth.Authenticate(
         _get_credentials(),
         cookie_name="wb_auth",
-        key=cookie_key,
+        cookie_key=cookie_key,
         cookie_expiry_days=30,
+        auto_hash=False,
     )
 
 
 def do_logout(authenticator) -> None:
-    """Удаляет cookie и очищает session_state.
-    Вызывается в основном потоке скрипта (не внутри on_click-колбэка),
-    поэтому stauth успевает удалить cookie до следующего рендера.
-    """
-    # Пробуем удалить cookie через внутренний хендлер stauth
-    # (атрибут называется по-разному в разных версиях 0.3.x)
+    """Удаляет cookie через внутренний хендлер stauth и очищает session_state."""
     for attr in ("cookie_handler", "cookie_manager"):
         handler = getattr(authenticator, attr, None)
         if handler is None:
@@ -48,8 +46,6 @@ def do_logout(authenticator) -> None:
                     pass
                 break
         break
-
-    # Очищаем session_state
     st.session_state.clear()
 
 

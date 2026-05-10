@@ -3,21 +3,21 @@ from src.auth import get_authenticator, set_role, get_role, do_logout
 
 st.set_page_config(page_title="WB Дашборд", page_icon="📦", layout="wide")
 
-# Кнопку «Выйти» и имя пользователя добавляем В САМОМ НАЧАЛЕ сайдбара,
-# ДО st.navigation() — иначе они уходят вниз за видимую область.
+# Резервируем места вверху сайдбара ДО навигации
 _sidebar_user   = st.sidebar.empty()
 _sidebar_sep    = st.sidebar.empty()
 _sidebar_logout = st.sidebar.empty()
 
 authenticator = get_authenticator()
-name, auth_status, username = authenticator.login("🔐 Вход в дашборд", "main")
+
+# stauth 0.3.3: login(location='main') — без названия формы первым аргументом
+name, auth_status, username = authenticator.login(location="main")
 
 if auth_status:
     resolved_username = username or st.session_state.get("username", "")
     set_role(resolved_username)
     role = get_role()
 
-    # Заполняем зарезервированные места вверху сайдбара
     _sidebar_user.markdown(f"👤 **{resolved_username}**")
     _sidebar_sep.markdown("---")
     if _sidebar_logout.button("🚪 Выйти"):
@@ -43,3 +43,5 @@ if auth_status:
 
 elif auth_status is False:
     st.error("Неверный логин или пароль")
+
+# auth_status is None — форма отрисована, ждём ввода
