@@ -6,13 +6,22 @@ st.set_page_config(page_title="WB Дашборд", page_icon="📦", layout="wid
 if st.session_state.get("authenticated"):
     role = get_role()
     pages = [
-        st.Page("pages/1_📊_Дашборд.py",   title="Дашборд",   icon="📊"),
-        st.Page("pages/2_📋_Таблица.py",   title="Таблица",   icon="📋"),
-        st.Page("pages/3_⚙️_Настройки.py", title="Настройки", icon="⚙️"),
-        st.Page("pages/4_🏭_Склады.py",    title="Склады",    icon="🏭"),
+        # ── Wildberries ──────────────────────────────────────────────────────
+        st.Page("pages/1_📊_Дашборд.py",       title="Дашборд WB",      icon="📊"),
+        st.Page("pages/2_📋_Таблица.py",       title="Таблица WB",      icon="📋"),
+        st.Page("pages/4_🏭_Склады.py",        title="Склады WB",       icon="🏭"),
+        # ── Ozon ─────────────────────────────────────────────────────────────
+        st.Page("pages/6_📊_Ozon_Дашборд.py", title="Дашборд Ozon",    icon="📊"),
+        st.Page("pages/7_📋_Ozon_Таблица.py", title="Таблица Ozon",    icon="📋"),
+        st.Page("pages/8_🏭_Ozon_Склады.py",  title="Склады Ozon",     icon="🏭"),
+        # ── Сводный ──────────────────────────────────────────────────────────
+        st.Page("pages/10_🔀_Сводный.py",     title="Сводный отчёт",   icon="🔀"),
+        # ── Прочее ───────────────────────────────────────────────────────────
+        st.Page("pages/3_⚙️_Настройки.py",    title="Настройки",       icon="⚙️"),
     ]
     if role == "admin":
-        pages.append(st.Page("pages/5_💰_Финансы.py", title="Финансы", icon="💰"))
+        pages.insert(3, st.Page("pages/5_💰_Финансы.py",       title="Финансы WB",   icon="💰"))
+        pages.insert(7, st.Page("pages/9_💰_Ozon_Финансы.py",  title="Финансы Ozon", icon="💰"))
 
     pg = st.navigation(pages)
 

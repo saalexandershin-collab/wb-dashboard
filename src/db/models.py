@@ -187,6 +187,109 @@ class FinancialReport(Base):
     )
 
 
+class OzonPosting(Base):
+    """Одна строка = один товар внутри постинга (заказа) Ozon."""
+    __tablename__ = "ozon_postings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # Идентификаторы
+    posting_number = Column(String(100), nullable=False)
+    order_id       = Column(String(100))
+    order_number   = Column(String(100))
+    order_type     = Column(String(10))   # FBO / FBS
+
+    # Товар
+    sku            = Column(BigInteger)
+    offer_id       = Column(String(200))
+    product_name   = Column(String(500))
+    quantity       = Column(Integer, default=0)
+
+    # Финансы
+    price                = Column(Float)   # цена за единицу
+    total_discount_value = Column(Float)
+    commission_amount    = Column(Float)
+    payout               = Column(Float)   # выплата продавцу за этот товар
+    old_price            = Column(Float)
+
+    # Логистика
+    warehouse_name = Column(String(200))
+    region         = Column(String(200))
+
+    # Статус
+    status       = Column(String(100))
+    is_cancelled = Column(Boolean, default=False)
+
+    # Даты
+    created_at    = Column(DateTime)
+    in_process_at = Column(DateTime)
+    shipment_date = Column(DateTime)
+
+    synced_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("posting_number", "sku", name="uq_ozon_posting_sku"),
+        Index("ix_ozon_postings_created_at", "created_at"),
+        Index("ix_ozon_postings_status", "status"),
+    )
+
+
+class OzonStock(Base):
+    __tablename__ = "ozon_stocks"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    sku          = Column(BigInteger)
+    offer_id     = Column(String(200))
+    product_name = Column(String(500))
+    warehouse_name = Column(String(200))
+
+    free_to_sell_amount = Column(Integer, default=0)
+    promised_amount     = Column(Integer, default=0)
+    reserved_amount     = Column(Integer, default=0)
+
+    synced_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("sku", "warehouse_name", name="uq_ozon_stock_sku_wh"),
+        Index("ix_ozon_stocks_sku", "sku"),
+    )
+
+
+class OzonTransaction(Base):
+    __tablename__ = "ozon_transactions"
+
+    id                   = Column(Integer, primary_key=True, autoincrement=True)
+    operation_id         = Column(String(100), nullable=False)
+    operation_date       = Column(DateTime)
+    operation_type       = Column(String(100))
+    operation_type_name  = Column(String(300))
+    posting_number       = Column(String(100))
+    order_id             = Column(String(100))
+
+    # Товар
+    sku          = Column(BigInteger)
+    offer_id     = Column(String(200))
+    product_name = Column(String(500))
+    quantity     = Column(Integer, default=0)
+
+    # Финансы
+    amount                 = Column(Float, default=0.0)
+    accruals_for_sale      = Column(Float)
+    sale_commission        = Column(Float)
+    delivery_charge        = Column(Float)
+    return_delivery_charge = Column(Float)
+
+    period_from = Column(DateTime)
+    period_to   = Column(DateTime)
+
+    synced_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("operation_id", "sku", name="uq_ozon_tx_op_sku"),
+        Index("ix_ozon_tx_operation_date", "operation_date"),
+    )
+
+
 def get_engine(db_url: str):
     if db_url.startswith("postgresql"):
         return create_engine(

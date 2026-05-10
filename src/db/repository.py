@@ -5,7 +5,7 @@ import calendar
 from typing import Optional
 import pandas as pd
 
-from src.db.models import Order, Sale, SyncLog, Stock, FinancialReport
+from src.db.models import Order, Sale, SyncLog, Stock, FinancialReport, OzonPosting, OzonStock, OzonTransaction
 
 
 class OrderRepository:
@@ -166,6 +166,88 @@ class FinancialReportRepository:
         return pd.DataFrame([_fin_to_dict(r) for r in rows])
 
 
+class OzonPostingRepository:
+
+    def upsert_many(self, session: Session, records: list[dict]):
+        if not records:
+            return 0
+        keys = [(r["posting_number"], r["sku"]) for r in records]
+        posting_numbers = list({r["posting_number"] for r in records})
+        skus = list({r["sku"] for r in records if r.get("sku")})
+        session.execute(
+            delete(OzonPosting).where(
+                OzonPosting.posting_number.in_(posting_numbers),
+                OzonPosting.sku.in_(skus),
+            )
+        )
+        session.bulk_insert_mappings(OzonPosting, records)
+        session.commit()
+        return len(records)
+
+    def get_by_month(self, session: Session, year: int, month: int) -> pd.DataFrame:
+        date_from = datetime(year, month, 1)
+        last_day = calendar.monthrange(year, month)[1]
+        date_to = datetime(year, month, last_day, 23, 59, 59)
+        stmt = select(OzonPosting).where(
+            OzonPosting.created_at >= date_from,
+            OzonPosting.created_at <= date_to,
+        )
+        rows = session.execute(stmt).scalars().all()
+        if not rows:
+            return pd.DataFrame()
+        return pd.DataFrame([_ozon_posting_to_dict(r) for r in rows])
+
+
+class OzonStockRepository:
+
+    def replace_all(self, session: Session, records: list[dict]):
+        if not records:
+            return 0
+        session.execute(delete(OzonStock))
+        session.bulk_insert_mappings(OzonStock, records)
+        session.commit()
+        return len(records)
+
+    def get_all(self, session: Session) -> pd.DataFrame:
+        rows = session.execute(select(OzonStock)).scalars().all()
+        if not rows:
+            return pd.DataFrame()
+        return pd.DataFrame([_ozon_stock_to_dict(r) for r in rows])
+
+    def get_synced_at(self, session: Session):
+        return session.execute(select(OzonStock.synced_at).limit(1)).scalar_one_or_none()
+
+
+class OzonTransactionRepository:
+
+    def upsert_many(self, session: Session, records: list[dict]):
+        if not records:
+            return 0
+        op_ids = list({r["operation_id"] for r in records})
+        skus = list({r["sku"] for r in records if r.get("sku")})
+        session.execute(
+            delete(OzonTransaction).where(
+                OzonTransaction.operation_id.in_(op_ids),
+            )
+        )
+        session.bulk_insert_mappings(OzonTransaction, records)
+        session.commit()
+        return len(records)
+
+    def get_by_month(self, session: Session, year: int, month: int) -> pd.DataFrame:
+        date_from = datetime(year, month, 1)
+        last_day = calendar.monthrange(year, month)[1]
+        date_to = datetime(year, month, last_day, 23, 59, 59)
+        stmt = select(OzonTransaction).where(
+            OzonTransaction.operation_date >= date_from,
+            OzonTransaction.operation_date <= date_to,
+        )
+        rows = session.execute(stmt).scalars().all()
+        if not rows:
+            return pd.DataFrame()
+        return pd.DataFrame([_ozon_tx_to_dict(r) for r in rows])
+
+
 def _order_to_dict(o: Order) -> dict:
     return {
         "id": o.id, "srid": o.srid, "nm_id": o.nm_id,
@@ -201,6 +283,46 @@ def _stock_to_dict(s: Stock) -> dict:
         "in_way_from_client": s.in_way_from_client,
         "quantity_full": s.quantity_full,
         "synced_at": s.synced_at,
+    }
+
+
+def _ozon_posting_to_dict(p: OzonPosting) -> dict:
+    return {
+        "id": p.id, "posting_number": p.posting_number,
+        "order_id": p.order_id, "order_number": p.order_number,
+        "order_type": p.order_type, "sku": p.sku, "offer_id": p.offer_id,
+        "product_name": p.product_name, "quantity": p.quantity,
+        "price": p.price, "total_discount_value": p.total_discount_value,
+        "commission_amount": p.commission_amount, "payout": p.payout,
+        "old_price": p.old_price, "warehouse_name": p.warehouse_name,
+        "region": p.region, "status": p.status, "is_cancelled": p.is_cancelled,
+        "created_at": p.created_at, "in_process_at": p.in_process_at,
+        "shipment_date": p.shipment_date,
+    }
+
+
+def _ozon_stock_to_dict(s: OzonStock) -> dict:
+    return {
+        "id": s.id, "sku": s.sku, "offer_id": s.offer_id,
+        "product_name": s.product_name, "warehouse_name": s.warehouse_name,
+        "free_to_sell_amount": s.free_to_sell_amount,
+        "promised_amount": s.promised_amount, "reserved_amount": s.reserved_amount,
+        "synced_at": s.synced_at,
+    }
+
+
+def _ozon_tx_to_dict(t: OzonTransaction) -> dict:
+    return {
+        "id": t.id, "operation_id": t.operation_id,
+        "operation_date": t.operation_date, "operation_type": t.operation_type,
+        "operation_type_name": t.operation_type_name,
+        "posting_number": t.posting_number, "order_id": t.order_id,
+        "sku": t.sku, "offer_id": t.offer_id, "product_name": t.product_name,
+        "quantity": t.quantity, "amount": t.amount,
+        "accruals_for_sale": t.accruals_for_sale, "sale_commission": t.sale_commission,
+        "delivery_charge": t.delivery_charge,
+        "return_delivery_charge": t.return_delivery_charge,
+        "period_from": t.period_from, "period_to": t.period_to,
     }
 
 
