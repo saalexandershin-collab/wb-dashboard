@@ -223,8 +223,13 @@ class OzonTransactionRepository:
     def upsert_many(self, session: Session, records: list[dict]):
         if not records:
             return 0
+        # Deduplicate by (operation_id, sku) — API may return duplicates
+        seen = {}
+        for r in records:
+            key = (r["operation_id"], r.get("sku") or "")
+            seen[key] = r
+        records = list(seen.values())
         op_ids = list({r["operation_id"] for r in records})
-        skus = list({r["sku"] for r in records if r.get("sku")})
         session.execute(
             delete(OzonTransaction).where(
                 OzonTransaction.operation_id.in_(op_ids),
