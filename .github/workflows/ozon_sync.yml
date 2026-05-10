@@ -1,0 +1,100 @@
+name: Ежедневная синхронизация Ozon
+
+on:
+  schedule:
+    - cron: "0 0 * * *"   # 03:00 МСК — заказы и остатки
+    - cron: "0 3 * * *"   # 06:00 МСК — финансы
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "Год (например 2026)"
+        required: false
+        default: ""
+      month:
+        description: "Месяц (1-12)"
+        required: false
+        default: ""
+      sync_type:
+        description: "Что синхронизировать: orders, finances, all"
+        required: false
+        default: "all"
+
+jobs:
+  sync-orders:
+    name: Заказы FBO+FBS + Остатки
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.schedule == '0 0 * * *'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установить Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Установить зависимости
+        run: pip install -r requirements.txt
+
+      - name: Синхронизировать заказы Ozon (пред. месяц)
+        env:
+          OZON_CLIENT_ID: ${{ secrets.OZON_CLIENT_ID }}
+          OZON_API_KEY: ${{ secrets.OZON_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'EOF'
+          import subprocess, sys, os
+          from datetime import date
+          from dateutil.relativedelta import relativedelta
+          today = date.today()
+          prev  = today - relativedelta(months=1)
+          for d in [prev, today]:
+              print(f"  → Заказы {d.year}-{d.month:02d}")
+              env = {**os.environ, "SYNC_YEAR": str(d.year), "SYNC_MONTH": str(d.month)}
+              subprocess.run([sys.executable, "scripts/sync_ozon_orders.py"], env=env, check=True)
+          EOF
+
+      - name: Синхронизировать остатки Ozon
+        env:
+          OZON_CLIENT_ID: ${{ secrets.OZON_CLIENT_ID }}
+          OZON_API_KEY: ${{ secrets.OZON_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/sync_ozon_stocks.py
+
+  sync-finances:
+    name: Финансовые транзакции
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.schedule == '0 3 * * *'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установить Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Установить зависимости
+        run: pip install -r requirements.txt
+
+      - name: Синхронизировать финансы Ozon (пред. месяц + текущий)
+        env:
+          OZON_CLIENT_ID: ${{ secrets.OZON_CLIENT_ID }}
+          OZON_API_KEY: ${{ secrets.OZON_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'EOF'
+          import subprocess, sys, os
+          from datetime import date
+          from dateutil.relativedelta import relativedelta
+          today = date.today()
+          prev  = today - relativedelta(months=1)
+          for d in [prev, today]:
+              print(f"  → Финансы {d.year}-{d.month:02d}")
+              env = {**os.environ, "SYNC_YEAR": str(d.year), "SYNC_MONTH": str(d.month)}
+              subprocess.run([sys.executable, "scripts/sync_ozon_finances.py"], env=env, check=True)
+          EOF
