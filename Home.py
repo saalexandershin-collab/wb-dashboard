@@ -37,6 +37,7 @@ if auth_status:
     if role == "admin":
         pages.insert(3, st.Page("pages/5_💰_Финансы.py",       title="Финансы WB",   icon="💰"))
         pages.insert(7, st.Page("pages/9_💰_Ozon_Финансы.py",  title="Финансы Ozon", icon="💰"))
+        pages.append(   st.Page("pages/11_📊_PnL.py",          title="P&L отчёт",    icon="📊"))
 
     pg = st.navigation(pages)
     pg.run()
