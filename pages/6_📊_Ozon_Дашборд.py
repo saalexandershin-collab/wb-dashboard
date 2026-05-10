@@ -45,26 +45,22 @@ if df.empty:
 df["created_at"] = pd.to_datetime(df["created_at"])
 df["day"] = df["created_at"].dt.day
 
+mask_orders    = ~df["is_cancelled"]
 mask_sold      = ~df["is_cancelled"] & (df["status"] == "delivered")
 mask_cancelled = df["is_cancelled"]
-mask_orders    = ~df["is_cancelled"]   # все не-отменённые = заказы
 
 qty_orders    = int(df[mask_orders]["quantity"].sum())
 qty_sold      = int(df[mask_sold]["quantity"].sum())
 qty_cancelled = int(df[mask_cancelled]["quantity"].sum())
-revenue       = float(df[mask_sold]["price"].fillna(0).mul(df[mask_sold]["quantity"].fillna(0)).sum())
-payout        = float(df[mask_sold]["payout"].fillna(0).sum())
-
-redemption = round(qty_sold / qty_orders * 100, 1) if qty_orders else 0.0
+redemption    = round(qty_sold / qty_orders * 100, 1) if qty_orders else 0.0
 
 # ── KPI ───────────────────────────────────────────────────────────────────────
 st.markdown("### Итого за месяц")
-k1, k2, k3, k4, k5 = st.columns(5)
-k1.metric("Заказов",        f"{qty_orders:,}".replace(",", " "))
-k2.metric("Выкупов",        f"{qty_sold:,}".replace(",", " "))
-k3.metric("Отменено",       f"{qty_cancelled:,}".replace(",", " "))
-k4.metric("% выкупа",       f"{redemption} %")
-k5.metric("Выплата Ozon",   f"{payout:,.0f} ₽".replace(",", " "))
+k1, k2, k3, k4 = st.columns(4)
+k1.metric("Заказов",  f"{qty_orders:,}".replace(",", " "))
+k2.metric("Выкупов",  f"{qty_sold:,}".replace(",", " "))
+k3.metric("Отменено", f"{qty_cancelled:,}".replace(",", " "))
+k4.metric("% выкупа", f"{redemption} %")
 st.markdown("---")
 
 # ── График по дням ────────────────────────────────────────────────────────────
@@ -73,29 +69,17 @@ all_days = list(range(1, days_in_month + 1))
 
 orders_by_day = df[mask_orders].groupby("day")["quantity"].sum().reindex(all_days, fill_value=0)
 sold_by_day   = df[mask_sold].groupby("day")["quantity"].sum().reindex(all_days, fill_value=0)
+cancel_by_day = df[mask_cancelled].groupby("day")["quantity"].sum().reindex(all_days, fill_value=0)
 
 fig = go.Figure()
 fig.add_bar(x=all_days, y=orders_by_day.values, name="Заказы",  marker_color="#F97316")
 fig.add_bar(x=all_days, y=sold_by_day.values,   name="Выкупы",  marker_color="#10B981")
-fig.update_layout(barmode="group", height=320,
-                  xaxis_title="День", yaxis_title="Количество",
+fig.add_bar(x=all_days, y=cancel_by_day.values, name="Отмены",  marker_color="#EF4444")
+fig.update_layout(barmode="group", height=340,
+                  xaxis_title="День", yaxis_title="Количество (шт.)",
                   margin=dict(t=10, b=10), legend=dict(orientation="h"))
-st.markdown("#### Заказы и выкупы по дням (шт.)")
+st.markdown("#### Заказы, выкупы и отмены по дням (шт.)")
 st.plotly_chart(fig, use_container_width=True)
-
-# ── Выручка по дням ───────────────────────────────────────────────────────────
-rev_by_day = (
-    df[mask_sold]
-    .assign(revenue=df[mask_sold]["price"].fillna(0) * df[mask_sold]["quantity"].fillna(0))
-    .groupby("day")["revenue"].sum()
-    .reindex(all_days, fill_value=0)
-)
-fig2 = px.area(x=all_days, y=rev_by_day.values,
-               labels={"x": "День", "y": "Выручка (₽)"},
-               color_discrete_sequence=["#F97316"])
-fig2.update_layout(height=260, margin=dict(t=10, b=10))
-st.markdown("#### Выручка по дням (₽)")
-st.plotly_chart(fig2, use_container_width=True)
 
 # ── Топ товаров ───────────────────────────────────────────────────────────────
 st.markdown("---")
@@ -103,17 +87,21 @@ st.markdown("#### Топ товаров по выкупам")
 top = (
     df[mask_sold]
     .groupby(["offer_id", "product_name"])
-    .agg(qty=("quantity", "sum"), revenue=("price", lambda x: (x * df.loc[x.index, "quantity"].fillna(0)).sum()))
+    .agg(qty=("quantity", "sum"))
     .reset_index()
     .sort_values("qty", ascending=False)
     .head(10)
 )
-top["label"] = top["offer_id"] + " / " + top["product_name"].str[:30]
-fig3 = px.bar(top, x="qty", y="label", orientation="h",
-              color_discrete_sequence=["#F97316"],
-              labels={"qty": "Выкупов (шт.)", "label": ""})
-fig3.update_layout(yaxis=dict(autorange="reversed"), height=320, margin=dict(t=10, b=10))
-st.plotly_chart(fig3, use_container_width=True)
+if not top.empty:
+    top["label"] = top["offer_id"] + " / " + top["product_name"].str[:35]
+    fig3 = px.bar(top, x="qty", y="label", orientation="h",
+                  color_discrete_sequence=["#F97316"],
+                  labels={"qty": "Выкупов (шт.)", "label": ""})
+    fig3.update_layout(yaxis=dict(autorange="reversed"), height=max(280, len(top) * 36),
+                       margin=dict(t=10, b=10))
+    st.plotly_chart(fig3, use_container_width=True)
+else:
+    st.info("Нет выкупов за период.")
 
 # ── По складам ────────────────────────────────────────────────────────────────
 if "warehouse_name" in df.columns:
