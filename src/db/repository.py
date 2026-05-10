@@ -145,14 +145,19 @@ class FinancialReportRepository:
         return len(records)
 
     def get_by_month(self, session: Session, year: int, month: int, platform: str = "wb") -> pd.DataFrame:
-        date_from = datetime(year, month, 1)
-        last_day = calendar.monthrange(year, month)[1]
-        date_to = datetime(year, month, last_day, 23, 59, 59)
+        from datetime import date as date_cls, timedelta
+        first_day = date_cls(year, month, 1)
+        last_day_num = calendar.monthrange(year, month)[1]
+        last_day = date_cls(year, month, last_day_num)
+        # Неделя (пн–вс) принадлежит месяцу, в котором её середина (чт = date_from + 3 дня).
+        # Значит берём отчёты с date_from в диапазоне [first_day - 3, last_day - 3].
+        df_min = first_day - timedelta(days=3)
+        df_max = last_day - timedelta(days=3)
         stmt = select(FinancialReport).where(
             and_(
                 FinancialReport.platform == platform,
-                FinancialReport.date_from >= date_from,
-                FinancialReport.date_from <= date_to,
+                FinancialReport.date_from >= df_min,
+                FinancialReport.date_from <= df_max,
             )
         )
         rows = session.execute(stmt).scalars().all()
