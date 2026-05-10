@@ -4,11 +4,13 @@ from datetime import datetime
 from typing import Optional
 
 BASE_URL = "https://statistics-api.wildberries.ru"
+FINANCE_URL = "https://statistics-api.wildberries.ru"
 MIN_INTERVAL = 75  # минимум секунд между запросами к одному эндпоинту
 _LOCK_FILES = {
-    "orders": "/tmp/wb_last_orders.txt",
-    "sales":  "/tmp/wb_last_sales.txt",
-    "stocks": "/tmp/wb_last_stocks.txt",
+    "orders":  "/tmp/wb_last_orders.txt",
+    "sales":   "/tmp/wb_last_sales.txt",
+    "stocks":  "/tmp/wb_last_stocks.txt",
+    "finance": "/tmp/wb_last_finance.txt",
 }
 _LOCK_FILE = "/tmp/wb_last_request.txt"  # legacy, оставляем для совместимости
 
@@ -94,6 +96,41 @@ class WBClient:
             on_progress=on_progress,
         )
 
+    def get_financial_report(self, date_from: datetime, date_to: datetime, on_progress=None) -> list[dict]:
+        """Загружает детализированный финансовый отчёт WB с пагинацией по rrdid."""
+        path = "/api/v5/supplier/reportDetailByPeriod"
+        params = {
+            "dateFrom": date_from.strftime("%Y-%m-%d"),
+            "dateTo": date_to.strftime("%Y-%m-%d"),
+            "rrdid": 0,
+            "limit": 100000,
+        }
+        all_rows: list[dict] = []
+        while True:
+            self._wait_if_needed(key="finance", on_progress=on_progress)
+            url = f"{BASE_URL}{path}"
+            self._save_request_time("finance")
+            resp = self.session.get(url, params=params, timeout=120)
+            if resp.status_code == 401:
+                raise WBApiError("Неверный токен WB API.")
+            if resp.status_code == 429:
+                wait = int(resp.headers.get("Retry-After", 90))
+                if on_progress:
+                    on_progress(f"Лимит WB API — жду {wait} сек...")
+                time.sleep(wait)
+                continue
+            if resp.status_code != 200:
+                raise WBApiError(f"Ошибка WB API {resp.status_code}: {resp.text[:300]}")
+            rows = resp.json()
+            if not rows:
+                break
+            all_rows.extend(rows)
+            # Пагинация: следующая страница начинается с последнего rrd_id
+            params["rrdid"] = rows[-1].get("rrd_id", 0)
+            if len(rows) < params["limit"]:
+                break
+        return all_rows
+
     def get_sales(self, date_from: datetime, flag: int = 0, on_progress=None) -> list[dict]:
         return self._get(
             "/api/v1/supplier/sales",
@@ -101,6 +138,46 @@ class WBClient:
             key="sales",
             on_progress=on_progress,
         )
+
+
+def parse_financial_report(raw: list[dict], platform: str = "wb") -> list[dict]:
+    result = []
+    for r in raw:
+        result.append({
+            "platform": platform,
+            "rrd_id": r.get("rrd_id"),
+            "realizationreport_id": r.get("realizationreport_id"),
+            "date_from": _parse_date(r.get("date_from")),
+            "date_to": _parse_date(r.get("date_to")),
+            "create_dt": _parse_dt(r.get("create_dt")),
+            "nm_id": r.get("nm_id"),
+            "supplier_article": r.get("sa_name") or r.get("supplier_article"),
+            "brand_name": r.get("brand_name"),
+            "subject_name": r.get("subject_name"),
+            "doc_type_name": r.get("doc_type_name"),
+            "supplier_oper_name": r.get("supplier_oper_name"),
+            "quantity": _int(r.get("quantity")) or 0,
+            "retail_price": _float(r.get("retail_price")),
+            "retail_price_withdisc_rub": _float(r.get("retail_price_withdisc_rub")),
+            "ppvz_for_pay": _float(r.get("ppvz_for_pay")),
+            "ppvz_sales_commission": _float(r.get("ppvz_sales_commission")),
+            "delivery_rub": _float(r.get("delivery_rub")),
+            "penalty": _float(r.get("penalty")),
+            "additional_payment": _float(r.get("additional_payment")),
+            "storage_fee": _float(r.get("storage_fee")),
+            "acquiring_fee": _float(r.get("acquiring_fee")),
+        })
+    return result
+
+
+def _parse_date(value):
+    if not value:
+        return None
+    try:
+        from datetime import date
+        return date.fromisoformat(str(value)[:10])
+    except Exception:
+        return None
 
 
 def parse_stocks(raw: list[dict]) -> list[dict]:

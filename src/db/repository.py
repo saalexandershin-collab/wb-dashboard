@@ -5,7 +5,7 @@ import calendar
 from typing import Optional
 import pandas as pd
 
-from src.db.models import Order, Sale, SyncLog
+from src.db.models import Order, Sale, SyncLog, FinancialReport
 
 
 class OrderRepository:
@@ -103,6 +103,40 @@ class SyncLogRepository:
         return session.execute(stmt).scalar_one_or_none()
 
 
+class FinancialReportRepository:
+
+    def upsert_many(self, session: Session, records: list[dict]):
+        if not records:
+            return 0
+        rrd_ids = [r["rrd_id"] for r in records if r.get("rrd_id")]
+        platform = records[0]["platform"]
+        session.execute(
+            delete(FinancialReport).where(
+                FinancialReport.platform == platform,
+                FinancialReport.rrd_id.in_(rrd_ids),
+            )
+        )
+        session.bulk_insert_mappings(FinancialReport, records)
+        session.commit()
+        return len(records)
+
+    def get_by_month(self, session: Session, year: int, month: int, platform: str = "wb") -> pd.DataFrame:
+        date_from = datetime(year, month, 1)
+        last_day = calendar.monthrange(year, month)[1]
+        date_to = datetime(year, month, last_day, 23, 59, 59)
+        stmt = select(FinancialReport).where(
+            and_(
+                FinancialReport.platform == platform,
+                FinancialReport.create_dt >= date_from,
+                FinancialReport.create_dt <= date_to,
+            )
+        )
+        rows = session.execute(stmt).scalars().all()
+        if not rows:
+            return pd.DataFrame()
+        return pd.DataFrame([_fin_to_dict(r) for r in rows])
+
+
 def _order_to_dict(o: Order) -> dict:
     return {
         "id": o.id, "srid": o.srid, "nm_id": o.nm_id,
@@ -124,4 +158,27 @@ def _sale_to_dict(s: Sale) -> dict:
         "finished_price": s.finished_price, "for_pay": s.for_pay,
         "price_with_disc": s.price_with_disc, "sale_date": s.sale_date,
         "is_return": s.is_return,
+    }
+
+
+def _fin_to_dict(f: FinancialReport) -> dict:
+    return {
+        "id": f.id, "rrd_id": f.rrd_id,
+        "realizationreport_id": f.realizationreport_id,
+        "date_from": f.date_from, "date_to": f.date_to,
+        "create_dt": f.create_dt,
+        "nm_id": f.nm_id, "supplier_article": f.supplier_article,
+        "brand_name": f.brand_name, "subject_name": f.subject_name,
+        "doc_type_name": f.doc_type_name,
+        "supplier_oper_name": f.supplier_oper_name,
+        "quantity": f.quantity,
+        "retail_price": f.retail_price,
+        "retail_price_withdisc_rub": f.retail_price_withdisc_rub,
+        "ppvz_for_pay": f.ppvz_for_pay,
+        "ppvz_sales_commission": f.ppvz_sales_commission,
+        "delivery_rub": f.delivery_rub,
+        "penalty": f.penalty,
+        "additional_payment": f.additional_payment,
+        "storage_fee": f.storage_fee,
+        "acquiring_fee": f.acquiring_fee,
     }

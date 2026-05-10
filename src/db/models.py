@@ -116,6 +116,51 @@ class SyncLog(Base):
     finished_at = Column(DateTime)
 
 
+class FinancialReport(Base):
+    __tablename__ = "financial_reports"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    platform = Column(String(20), nullable=False, default="wb")
+
+    # Идентификаторы
+    rrd_id = Column(Integer)                    # уникальный ID строки отчёта
+    realizationreport_id = Column(Integer)      # ID недельного отчёта
+
+    # Период отчёта
+    date_from = Column(Date)
+    date_to = Column(Date)
+    create_dt = Column(DateTime)                # дата транзакции (для группировки по месяцу)
+
+    # Товар
+    nm_id = Column(Integer)
+    supplier_article = Column(String(200))
+    brand_name = Column(String(200))
+    subject_name = Column(String(200))
+
+    # Тип операции
+    doc_type_name = Column(String(100))         # Продажа / Возврат / Корректировка
+    supplier_oper_name = Column(String(200))    # детальное название операции
+    quantity = Column(Integer, default=0)
+
+    # Финансы
+    retail_price = Column(Float)                # полная цена товара
+    retail_price_withdisc_rub = Column(Float)   # цена продажи (с учётом скидки)
+    ppvz_for_pay = Column(Float)                # начислено продавцу по этой строке
+    ppvz_sales_commission = Column(Float)       # комиссия WB
+    delivery_rub = Column(Float)                # логистика
+    penalty = Column(Float)                     # штраф
+    additional_payment = Column(Float)          # прочие удержания / доплаты
+    storage_fee = Column(Float)                 # хранение
+    acquiring_fee = Column(Float)               # эквайринг
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("platform", "rrd_id", name="uq_fin_platform_rrd_id"),
+        Index("ix_fin_platform_create_dt", "platform", "create_dt"),
+    )
+
+
 def get_engine(db_url: str):
     if db_url.startswith("postgresql"):
         return create_engine(
