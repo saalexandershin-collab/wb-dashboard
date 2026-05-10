@@ -1,10 +1,21 @@
 import streamlit as st
-from src.auth import get_role, logout
+from src.auth import get_authenticator, set_role, get_role
 
 st.set_page_config(page_title="WB Дашборд", page_icon="📦", layout="wide")
 
-if st.session_state.get("authenticated"):
+# get_authenticator() проверяет cookie и рендерит форму если нужно.
+# Возвращает (name, True/False/None, username).
+# True  — вошёл (из формы или cookie)
+# False — неверный пароль
+# None  — форма показана, ждём ввода
+authenticator = get_authenticator()
+name, auth_status, username = authenticator.login("🔐 Вход в дашборд", "main")
+
+if auth_status:
+    # Устанавливаем роль на каждом запросе — username всегда актуален из stauth
+    set_role(username or st.session_state.get("username", ""))
     role = get_role()
+
     pages = [
         # ── Wildberries ──────────────────────────────────────────────────────
         st.Page("pages/1_📊_Дашборд.py",       title="Дашборд WB",      icon="📊"),
@@ -27,11 +38,13 @@ if st.session_state.get("authenticated"):
 
     st.sidebar.markdown("---")
     st.sidebar.markdown(f"👤 {st.session_state.get('username', '')}")
-    if st.sidebar.button("Выйти"):
-        logout()
-        st.rerun()
+    # logout() рендерит кнопку «Выйти» и обрабатывает клик сам —
+    # включая удаление cookie. Нельзя вызывать внутри другого button-колбэка.
+    authenticator.logout("Выйти", "sidebar")
 
     pg.run()
-else:
-    from src.auth import require_login
-    require_login()
+
+elif auth_status is False:
+    st.error("Неверный логин или пароль")
+
+# Если auth_status is None — форма уже показана, ждём ввода, ничего не делаем
