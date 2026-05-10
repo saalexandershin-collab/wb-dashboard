@@ -177,5 +177,13 @@ def get_session_factory(engine):
 
 def init_db(db_url: str):
     engine = get_engine(db_url)
-    Base.metadata.create_all(engine)
+    try:
+        Base.metadata.create_all(engine)
+    except Exception:
+        # Supabase race condition: два воркера одновременно пытаются CREATE TABLE
+        # Повторный вызов безопасен — IF NOT EXISTS пропустит уже созданные таблицы
+        try:
+            Base.metadata.create_all(engine)
+        except Exception:
+            pass
     return engine
