@@ -115,6 +115,7 @@ SALES_PLAN = {(2026, 5): 4500}  # план по месяцам: {(год, мес
 
 total_orders = len(ord_df[ord_df["is_actual"]]) if not ord_df.empty else 0
 total_buyouts = len(buy_df)
+total_cancels = len(ord_df[~ord_df["is_actual"]]) if not ord_df.empty else 0
 total_returns = len(ret_df)
 
 plan = SALES_PLAN.get((year, month))
@@ -132,15 +133,16 @@ else:
     plan_pct = forecast_pct = None
 
 st.markdown("### Итого за месяц")
-c1, c2, c3, c4, c5 = st.columns(5)
+c1, c2, c3, c4, c5, c6 = st.columns(6)
 c1.metric("Заказов", f"{total_orders:,}".replace(",", " "))
 c2.metric("Выкупов", f"{total_buyouts:,}".replace(",", " "))
-c3.metric("Возвратов", f"{total_returns:,}".replace(",", " "))
+c3.metric("Отмен", f"{total_cancels:,}".replace(",", " "))
+c4.metric("Возвратов", f"{total_returns:,}".replace(",", " "))
 if plan_pct is not None:
-    c4.metric("% плана", f"{plan_pct:.1f}%", help=f"План: {plan:,} выкупов")
+    c5.metric("% плана", f"{plan_pct:.1f}%", help=f"План: {plan:,} выкупов")
     color = "#10B981" if forecast_pct >= 100 else "#EF4444"
     delta_sign = "+" if forecast_pct >= 100 else ""
-    c5.markdown(
+    c6.markdown(
         f"""
         <div style="line-height:1.4">
           <p style="font-size:0.875rem;color:#6B7280;margin:0">Прогноз к концу месяца</p>
@@ -151,8 +153,8 @@ if plan_pct is not None:
         unsafe_allow_html=True,
     )
 else:
-    c4.metric("% плана", "—")
-    c5.metric("Прогноз", "—")
+    c5.metric("% плана", "—")
+    c6.metric("Прогноз", "—")
 
 st.markdown("---")
 
