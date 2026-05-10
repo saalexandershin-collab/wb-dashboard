@@ -57,6 +57,33 @@ with SqliteSession() as src, PgSession() as dst:
             dst.execute(text(f"INSERT INTO sales ({col_str}) VALUES ({placeholders})"),
                         cast_row(sale_cols, row))
 
+    # Мигрируем остатки
+    stocks = src.execute(text("SELECT * FROM stocks")).fetchall()
+    stock_cols = list(src.execute(text("SELECT * FROM stocks LIMIT 0")).keys())
+    print(f"Миграция {len(stocks)} остатков...")
+    if stocks:
+        dst.execute(text("TRUNCATE TABLE stocks"))
+        placeholders = ", ".join(f":{c}" for c in stock_cols)
+        col_str = ", ".join(stock_cols)
+        for row in stocks:
+            dst.execute(text(f"INSERT INTO stocks ({col_str}) VALUES ({placeholders})"),
+                        cast_row(stock_cols, row))
+
+    # Мигрируем финансовые отчёты
+    try:
+        fins = src.execute(text("SELECT * FROM financial_reports")).fetchall()
+        fin_cols = list(src.execute(text("SELECT * FROM financial_reports LIMIT 0")).keys())
+        print(f"Миграция {len(fins)} финансовых строк...")
+        if fins:
+            dst.execute(text("TRUNCATE TABLE financial_reports"))
+            placeholders = ", ".join(f":{c}" for c in fin_cols)
+            col_str = ", ".join(fin_cols)
+            for row in fins:
+                dst.execute(text(f"INSERT INTO financial_reports ({col_str}) VALUES ({placeholders})"),
+                            cast_row(fin_cols, row))
+    except Exception as e:
+        print(f"⚠️  Финансовые отчёты: {e} (пропускаем)")
+
     # Мигрируем логи синхронизации
     logs = src.execute(text("SELECT * FROM sync_log")).fetchall()
     log_cols = list(src.execute(text("SELECT * FROM sync_log LIMIT 0")).keys())

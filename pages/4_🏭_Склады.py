@@ -1,46 +1,44 @@
 import math
 import streamlit as st
 import pandas as pd
+import calendar
 from datetime import datetime, timedelta
 from sqlalchemy import text
 
-from src.api.wb_client import WBClient, WBApiError, parse_stocks
 from src.db.models import init_db, get_session_factory
+from src.db.repository import StockRepository, SaleRepository
 from src.auth import require_login
 
 st.set_page_config(page_title="Склады", page_icon="🏭", layout="wide")
 require_login()
 st.title("🏭 Остатки и продажи по складам FBO")
 
-if "wildberries" not in st.secrets or "database" not in st.secrets:
-    st.error("Не настроены токен WB или база данных. Проверьте раздел ⚙️ Настройки.")
+if "database" not in st.secrets:
+    st.error("Не настроена база данных. Проверьте раздел ⚙️ Настройки.")
     st.stop()
+
+DB_URL = st.secrets["database"]["url"]
 
 st.sidebar.markdown(f"👤 {st.session_state.get('username', '')}")
 if st.sidebar.button("Выйти"):
     st.session_state.clear()
     st.rerun()
 
-DAYS_ANALYSIS = 14   # период для расчёта среднедневных продаж
-GREEN_DAYS    = 30   # порог «всё хорошо» (дней запаса)
-YELLOW_DAYS   = 14   # порог «предупреждение»
-RED_DAYS      = 7    # порог «критично»
+DAYS_ANALYSIS = 14
+GREEN_DAYS    = 30
+YELLOW_DAYS   = 14
+RED_DAYS      = 7
 
-# ── Загрузка остатков ─────────────────────────────────────────────────────────
-@st.cache_data(ttl=3600, show_spinner="Загружаю остатки с WB...")
-def load_stocks(token: str) -> pd.DataFrame:
-    client = WBClient(token)
-    raw = client.get_stocks(datetime.now() - timedelta(days=30))
-    rows = parse_stocks(raw)
-    return pd.DataFrame(rows) if rows else pd.DataFrame()
-
-# ── Загрузка продаж за последние N дней ──────────────────────────────────────
-@st.cache_data(ttl=3600, show_spinner="Загружаю продажи...")
-def load_sales(db_url: str, days: int) -> pd.DataFrame:
+# ── Загрузка данных из базы (без WB API) ─────────────────────────────────────
+@st.cache_data(ttl=300, show_spinner="Загружаю данные из базы...")
+def load_data(db_url: str):
     engine = init_db(db_url)
     Session = get_session_factory(engine)
-    date_from = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     with Session() as session:
+        stocks_df = StockRepository().get_all(session)
+        synced_at = StockRepository().get_synced_at(session)
+
+        date_from = (datetime.now() - timedelta(days=DAYS_ANALYSIS)).strftime("%Y-%m-%d")
         rows = session.execute(text("""
             SELECT nm_id, warehouse_name, COUNT(*) as sales_count
             FROM sales
@@ -48,24 +46,31 @@ def load_sales(db_url: str, days: int) -> pd.DataFrame:
               AND sale_id NOT LIKE 'R%'
             GROUP BY nm_id, warehouse_name
         """), {"date_from": date_from}).fetchall()
-    if not rows:
-        return pd.DataFrame(columns=["nm_id", "warehouse_name", "sales_count"])
-    return pd.DataFrame(rows, columns=["nm_id", "warehouse_name", "sales_count"])
+        sales_df = (
+            pd.DataFrame(rows, columns=["nm_id", "warehouse_name", "sales_count"])
+            if rows else
+            pd.DataFrame(columns=["nm_id", "warehouse_name", "sales_count"])
+        )
+    return stocks_df, sales_df, synced_at
 
-token  = st.secrets["wildberries"]["api_token"]
-db_url = st.secrets["database"]["url"]
-
-try:
-    stocks_df = load_stocks(token)
-except WBApiError as e:
-    st.error(str(e))
-    st.stop()
-
-sales_df = load_sales(db_url, DAYS_ANALYSIS)
+stocks_df, sales_df, synced_at = load_data(DB_URL)
 
 if stocks_df.empty:
-    st.warning("Нет данных об остатках.")
+    st.warning(
+        "Нет данных об остатках в базе. "
+        "Запустите синхронизацию остатков локально:\n\n"
+        "```\nWB_API_TOKEN='...' DATABASE_URL='sqlite:///wb_local.db' "
+        "python3 scripts/sync_stocks.py\n```\n\n"
+        "Затем перенесите в Supabase:\n\n"
+        "```\npython3 scripts/migrate_to_pg.py\n```"
+    )
     st.stop()
+
+# Показываем когда последний раз обновлялись остатки
+if synced_at:
+    age = datetime.utcnow() - synced_at
+    age_str = f"{int(age.total_seconds() // 3600)} ч назад" if age.total_seconds() > 3600 else f"{int(age.total_seconds() // 60)} мин назад"
+    st.caption(f"📦 Остатки обновлены: {age_str} · Для обновления запустите `sync_stocks.py`")
 
 # ── Актуальные артикулы по nm_id ──────────────────────────────────────────────
 latest = (
@@ -91,9 +96,9 @@ if sel_articles:
 
 # ── KPI ───────────────────────────────────────────────────────────────────────
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("На складах", f"{stocks_df['quantity'].sum():,}".replace(",", " "))
-c2.metric("В пути к клиенту", f"{stocks_df['in_way_to_client'].sum():,}".replace(",", " "))
-c3.metric("В пути от клиента", f"{stocks_df['in_way_from_client'].sum():,}".replace(",", " "))
+c1.metric("На складах",          f"{stocks_df['quantity'].sum():,}".replace(",", " "))
+c2.metric("В пути к клиенту",    f"{stocks_df['in_way_to_client'].sum():,}".replace(",", " "))
+c3.metric("В пути от клиента",   f"{stocks_df['in_way_from_client'].sum():,}".replace(",", " "))
 c4.metric(f"Продаж за {DAYS_ANALYSIS} дней", f"{int(sales_df['sales_count'].sum()):,}".replace(",", " "))
 
 st.markdown("---")
@@ -116,7 +121,7 @@ st.dataframe(pivot, use_container_width=True, hide_index=True, height=400)
 
 st.markdown("---")
 
-# ── Анализ запасов: склад + артикул ──────────────────────────────────────────
+# ── Анализ запасов ────────────────────────────────────────────────────────────
 st.markdown(f"### Анализ запасов (продажи за {DAYS_ANALYSIS} дн. · порог поставки: {GREEN_DAYS} дн.)")
 
 stock_by = stocks_df.groupby(["nm_id", "warehouse_name"])["quantity"].sum().reset_index()
@@ -129,7 +134,6 @@ merged = stock_by.merge(sales_by[["nm_id", "warehouse_name", "sales_total", "dai
                         on=["nm_id", "warehouse_name"], how="left").fillna(0)
 merged = merged.merge(latest[["nm_id", "brand", "supplier_article"]], on="nm_id", how="left")
 
-# Дней запаса и сколько нужно поставить
 def days_of_supply(row):
     if row["daily_avg"] <= 0:
         return 999
@@ -139,59 +143,39 @@ def needed_qty(row):
     if row["daily_avg"] <= 0:
         return 0
     target = math.ceil(GREEN_DAYS * row["daily_avg"])
-    need = target - int(row["stock"])
-    return max(0, need)
+    return max(0, target - int(row["stock"]))
 
 def status(days):
-    if days >= GREEN_DAYS:
-        return "🟢 OK"
-    if days >= YELLOW_DAYS:
-        return "🟡 Предупреждение"
-    if days >= RED_DAYS:
-        return "🟠 Скоро закончится"
+    if days >= GREEN_DAYS:   return "🟢 OK"
+    if days >= YELLOW_DAYS:  return "🟡 Предупреждение"
+    if days >= RED_DAYS:     return "🟠 Скоро закончится"
     return "🔴 Критично"
 
 merged["days_supply"] = merged.apply(days_of_supply, axis=1)
 merged["needed"]      = merged.apply(needed_qty, axis=1)
 merged["status"]      = merged["days_supply"].apply(status)
-
-# Убираем строки где нет продаж и нет остатка
 merged = merged[(merged["stock"] > 0) | (merged["sales_total"] > 0)]
-merged = merged.sort_values(["days_supply"], ascending=True)
+merged = merged.sort_values("days_supply", ascending=True)
 
 result = merged[[
     "brand", "supplier_article", "nm_id", "warehouse_name",
     "stock", "daily_avg", "days_supply", "needed", "status"
 ]].rename(columns={
-    "brand": "Бренд",
-    "supplier_article": "Артикул",
-    "nm_id": "nmId WB",
-    "warehouse_name": "Склад",
-    "stock": "Остаток",
-    "daily_avg": "Продаж/день",
-    "days_supply": "Запас (дней)",
-    "needed": "Нужно поставить",
-    "status": "Статус",
+    "brand": "Бренд", "supplier_article": "Артикул", "nm_id": "nmId WB",
+    "warehouse_name": "Склад", "stock": "Остаток", "daily_avg": "Продаж/день",
+    "days_supply": "Запас (дней)", "needed": "Нужно поставить", "status": "Статус",
 })
 
-# Сначала показываем критичные
-st.dataframe(
-    result,
-    use_container_width=True,
-    hide_index=True,
-    height=500,
+st.dataframe(result, use_container_width=True, hide_index=True, height=500,
     column_config={
-        "Запас (дней)": st.column_config.NumberColumn(format="%.1f"),
-        "Продаж/день": st.column_config.NumberColumn(format="%.1f"),
-        "Нужно поставить": st.column_config.NumberColumn(
-            help=f"Количество для достижения {GREEN_DAYS} дней запаса"
-        ),
+        "Запас (дней)":    st.column_config.NumberColumn(format="%.1f"),
+        "Продаж/день":     st.column_config.NumberColumn(format="%.2f"),
+        "Нужно поставить": st.column_config.NumberColumn(help=f"Для достижения {GREEN_DAYS} дней запаса"),
     },
 )
 
-# ── Сводка по критичным позициям ──────────────────────────────────────────────
 critical = result[result["Статус"].str.startswith("🔴")]
-warning  = result[(result["Статус"].str.startswith("🟠")) | (result["Статус"].str.startswith("🟡"))]
+warning  = result[result["Статус"].str.startswith("🟠") | result["Статус"].str.startswith("🟡")]
 
 if not critical.empty:
     st.error(f"🔴 Критично (менее {RED_DAYS} дней): {len(critical)} позиций")

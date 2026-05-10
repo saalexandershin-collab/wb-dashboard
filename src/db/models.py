@@ -116,6 +116,32 @@ class SyncLog(Base):
     finished_at = Column(DateTime)
 
 
+class Stock(Base):
+    __tablename__ = "stocks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    platform = Column(String(20), nullable=False, default="wb")
+
+    nm_id = Column(Integer)
+    supplier_article = Column(String(200))
+    barcode = Column(String(100))
+    brand = Column(String(200))
+    subject = Column(String(200))
+    category = Column(String(200))
+    warehouse_name = Column(String(200))
+    quantity = Column(Integer, default=0)
+    in_way_to_client = Column(Integer, default=0)
+    in_way_from_client = Column(Integer, default=0)
+    quantity_full = Column(Integer, default=0)
+
+    synced_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("platform", "nm_id", "barcode", "warehouse_name", name="uq_stocks_key"),
+        Index("ix_stocks_platform_nm_id", "platform", "nm_id"),
+    )
+
+
 class FinancialReport(Base):
     __tablename__ = "financial_reports"
 

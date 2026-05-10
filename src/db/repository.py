@@ -5,7 +5,7 @@ import calendar
 from typing import Optional
 import pandas as pd
 
-from src.db.models import Order, Sale, SyncLog, FinancialReport
+from src.db.models import Order, Sale, SyncLog, Stock, FinancialReport
 
 
 class OrderRepository:
@@ -103,6 +103,30 @@ class SyncLogRepository:
         return session.execute(stmt).scalar_one_or_none()
 
 
+class StockRepository:
+
+    def replace_all(self, session: Session, records: list[dict], platform: str = "wb"):
+        """Полностью заменяет остатки: удаляет старые, вставляет новые."""
+        if not records:
+            return 0
+        session.execute(delete(Stock).where(Stock.platform == platform))
+        session.bulk_insert_mappings(Stock, records)
+        session.commit()
+        return len(records)
+
+    def get_all(self, session: Session, platform: str = "wb") -> pd.DataFrame:
+        stmt = select(Stock).where(Stock.platform == platform)
+        rows = session.execute(stmt).scalars().all()
+        if not rows:
+            return pd.DataFrame()
+        return pd.DataFrame([_stock_to_dict(r) for r in rows])
+
+    def get_synced_at(self, session: Session, platform: str = "wb"):
+        stmt = select(Stock.synced_at).where(Stock.platform == platform).limit(1)
+        result = session.execute(stmt).scalar_one_or_none()
+        return result
+
+
 class FinancialReportRepository:
 
     def upsert_many(self, session: Session, records: list[dict]):
@@ -158,6 +182,20 @@ def _sale_to_dict(s: Sale) -> dict:
         "finished_price": s.finished_price, "for_pay": s.for_pay,
         "price_with_disc": s.price_with_disc, "sale_date": s.sale_date,
         "is_return": s.is_return,
+    }
+
+
+def _stock_to_dict(s: Stock) -> dict:
+    return {
+        "nm_id": s.nm_id, "supplier_article": s.supplier_article,
+        "barcode": s.barcode, "brand": s.brand,
+        "subject": s.subject, "category": s.category,
+        "warehouse_name": s.warehouse_name,
+        "quantity": s.quantity,
+        "in_way_to_client": s.in_way_to_client,
+        "in_way_from_client": s.in_way_from_client,
+        "quantity_full": s.quantity_full,
+        "synced_at": s.synced_at,
     }
 
 
