@@ -247,13 +247,15 @@ def _parse_dt(value) -> Optional[datetime]:
         return None
     if isinstance(value, datetime):
         return value
-    s = str(value)[:19].replace("T", " ")
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(s[:len(fmt)], fmt)
-        except ValueError:
-            continue
-    return None
+    s = str(value)[:19].replace("T", " ").rstrip("Z").rstrip()
+    try:
+        return datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        pass
+    try:
+        return datetime.strptime(s[:10], "%Y-%m-%d")
+    except ValueError:
+        return None
 
 
 def _float(v) -> Optional[float]:
