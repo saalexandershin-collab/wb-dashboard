@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import select, and_, delete
+from sqlalchemy import select, and_, delete, text
 from datetime import datetime
 import calendar
 from typing import Optional
@@ -15,6 +15,14 @@ def _get_dialect(session: Session) -> str:
         return "sqlite"
 
 
+def _reset_pg_sequence(session: Session, table: str, column: str = "id"):
+    """Сбрасывает PostgreSQL sequence на MAX(id) чтобы избежать duplicate key pkey."""
+    session.execute(text(
+        f"SELECT setval(pg_get_serial_sequence('{table}', '{column}'), "
+        f"COALESCE(MAX({column}), 1)) FROM {table}"
+    ))
+
+
 class OrderRepository:
 
     def upsert_many(self, session: Session, records: list[dict]):
@@ -25,6 +33,8 @@ class OrderRepository:
         if dialect == "postgresql":
             # Атомарный UPSERT через INSERT ... ON CONFLICT — без duplicate key при конкуренции
             from sqlalchemy.dialects.postgresql import insert as pg_insert
+            # Сброс sequence на MAX(id) — защита от сбоя после миграции с explicit IDs
+            _reset_pg_sequence(session, "orders")
             stmt = pg_insert(Order).values(records)
             stmt = stmt.on_conflict_do_update(
                 constraint="uq_orders_platform_srid",
@@ -82,6 +92,7 @@ class SaleRepository:
         dialect = _get_dialect(session)
         if dialect == "postgresql":
             from sqlalchemy.dialects.postgresql import insert as pg_insert
+            _reset_pg_sequence(session, "sales")
             stmt = pg_insert(Sale).values(records)
             stmt = stmt.on_conflict_do_update(
                 constraint="uq_sales_platform_sale_id",
