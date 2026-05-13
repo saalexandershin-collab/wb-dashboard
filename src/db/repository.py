@@ -8,18 +8,51 @@ import pandas as pd
 from src.db.models import Order, Sale, SyncLog, Stock, FinancialReport, OzonPosting, OzonStock, OzonTransaction
 
 
+def _get_dialect(session: Session) -> str:
+    try:
+        return session.get_bind().dialect.name
+    except Exception:
+        return "sqlite"
+
+
 class OrderRepository:
 
     def upsert_many(self, session: Session, records: list[dict]):
         if not records:
             return 0
-        srids = [r["srid"] for r in records]
         platform = records[0]["platform"]
-        # Удаляем существующие, потом вставляем заново — работает и в SQLite, и в PostgreSQL
-        session.execute(
-            delete(Order).where(Order.platform == platform, Order.srid.in_(srids))
-        )
-        session.bulk_insert_mappings(Order, records)
+        dialect = _get_dialect(session)
+        if dialect == "postgresql":
+            # Атомарный UPSERT через INSERT ... ON CONFLICT — без duplicate key при конкуренции
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            stmt = pg_insert(Order).values(records)
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_orders_platform_srid",
+                set_={
+                    "nm_id": stmt.excluded.nm_id,
+                    "supplier_article": stmt.excluded.supplier_article,
+                    "brand": stmt.excluded.brand,
+                    "subject": stmt.excluded.subject,
+                    "category": stmt.excluded.category,
+                    "warehouse_name": stmt.excluded.warehouse_name,
+                    "region_name": stmt.excluded.region_name,
+                    "total_price": stmt.excluded.total_price,
+                    "discount_percent": stmt.excluded.discount_percent,
+                    "finished_price": stmt.excluded.finished_price,
+                    "price_with_disc": stmt.excluded.price_with_disc,
+                    "order_date": stmt.excluded.order_date,
+                    "is_cancel": stmt.excluded.is_cancel,
+                    "last_change_date": stmt.excluded.last_change_date,
+                },
+            )
+            session.execute(stmt)
+        else:
+            # SQLite: delete + insert
+            srids = [r["srid"] for r in records]
+            session.execute(
+                delete(Order).where(Order.platform == platform, Order.srid.in_(srids))
+            )
+            session.bulk_insert_mappings(Order, records)
         session.commit()
         return len(records)
 
@@ -45,12 +78,38 @@ class SaleRepository:
     def upsert_many(self, session: Session, records: list[dict]):
         if not records:
             return 0
-        sale_ids = [r["sale_id"] for r in records]
         platform = records[0]["platform"]
-        session.execute(
-            delete(Sale).where(Sale.platform == platform, Sale.sale_id.in_(sale_ids))
-        )
-        session.bulk_insert_mappings(Sale, records)
+        dialect = _get_dialect(session)
+        if dialect == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            stmt = pg_insert(Sale).values(records)
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_sales_platform_sale_id",
+                set_={
+                    "nm_id": stmt.excluded.nm_id,
+                    "supplier_article": stmt.excluded.supplier_article,
+                    "brand": stmt.excluded.brand,
+                    "subject": stmt.excluded.subject,
+                    "category": stmt.excluded.category,
+                    "warehouse_name": stmt.excluded.warehouse_name,
+                    "region_name": stmt.excluded.region_name,
+                    "price_with_disc": stmt.excluded.price_with_disc,
+                    "finished_price": stmt.excluded.finished_price,
+                    "for_pay": stmt.excluded.for_pay,
+                    "total_price": stmt.excluded.total_price,
+                    "discount_percent": stmt.excluded.discount_percent,
+                    "sale_date": stmt.excluded.sale_date,
+                    "is_return": stmt.excluded.is_return,
+                    "last_change_date": stmt.excluded.last_change_date,
+                },
+            )
+            session.execute(stmt)
+        else:
+            sale_ids = [r["sale_id"] for r in records]
+            session.execute(
+                delete(Sale).where(Sale.platform == platform, Sale.sale_id.in_(sale_ids))
+            )
+            session.bulk_insert_mappings(Sale, records)
         session.commit()
         return len(records)
 

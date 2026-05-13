@@ -5,14 +5,17 @@ from typing import Optional
 
 BASE_URL = "https://statistics-api.wildberries.ru"
 FINANCE_URL = "https://statistics-api.wildberries.ru"
-MIN_INTERVAL = 75  # минимум секунд между запросами к одному эндпоинту
+MIN_INTERVAL = 80  # минимум секунд между ЛЮБЫМИ запросами к WB API (лимит = 1 req/мин)
+# Единый глобальный файл-таймер: не важно, к какому эндпоинту — WB ограничивает по токену
+_GLOBAL_LOCK_FILE = "/tmp/wb_last_any_request.txt"
+# Оставляем per-endpoint файлы для совместимости, но таймер теперь глобальный
 _LOCK_FILES = {
     "orders":  "/tmp/wb_last_orders.txt",
     "sales":   "/tmp/wb_last_sales.txt",
     "stocks":  "/tmp/wb_last_stocks.txt",
     "finance": "/tmp/wb_last_finance.txt",
 }
-_LOCK_FILE = "/tmp/wb_last_request.txt"  # legacy, оставляем для совместимости
+_LOCK_FILE = "/tmp/wb_last_request.txt"  # legacy
 
 
 class WBApiError(Exception):
@@ -26,6 +29,14 @@ class WBClient:
         self.session = requests.Session()
         self.session.headers.update({"Authorization": token})
 
+    def _last_global_request_time(self) -> float:
+        """Время последнего запроса к WB API (любой эндпоинт)."""
+        try:
+            with open(_GLOBAL_LOCK_FILE) as f:
+                return float(f.read().strip())
+        except Exception:
+            return 0.0
+
     def _last_request_time(self, key: str = "default") -> float:
         lock_file = _LOCK_FILES.get(key, _LOCK_FILE)
         try:
@@ -35,19 +46,29 @@ class WBClient:
             return 0.0
 
     def _save_request_time(self, key: str = "default"):
+        now = str(time.time())
+        # Сохраняем в глобальный файл (единый таймер для всех эндпоинтов)
+        try:
+            with open(_GLOBAL_LOCK_FILE, "w") as f:
+                f.write(now)
+        except Exception:
+            pass
+        # И в per-endpoint файл (для совместимости)
         lock_file = _LOCK_FILES.get(key, _LOCK_FILE)
         try:
             with open(lock_file, "w") as f:
-                f.write(str(time.time()))
+                f.write(now)
         except Exception:
             pass
 
     def _wait_if_needed(self, key: str = "default", on_progress=None):
-        elapsed = time.time() - self._last_request_time(key)
+        # Ждём относительно ГЛОБАЛЬНОГО таймера (последний запрос к любому эндпоинту WB)
+        # Это исключает блокировку токена при параллельных вызовах разных эндпоинтов
+        elapsed = time.time() - self._last_global_request_time()
         if elapsed < MIN_INTERVAL:
             wait = int(MIN_INTERVAL - elapsed + 2)
             if on_progress:
-                on_progress(f"Жду {wait} сек перед следующим запросом (лимит WB API)...")
+                on_progress(f"Жду {wait} сек перед следующим запросом WB API...")
             time.sleep(wait)
 
     def _get(self, path: str, params: dict, key: str = "default", on_progress=None) -> list[dict]:
