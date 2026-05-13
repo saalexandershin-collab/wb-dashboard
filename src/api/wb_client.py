@@ -5,10 +5,16 @@ from typing import Optional
 
 BASE_URL = "https://statistics-api.wildberries.ru"
 FINANCE_URL = "https://statistics-api.wildberries.ru"
-MIN_INTERVAL = 80  # минимум секунд между ЛЮБЫМИ запросами к WB API (лимит = 1 req/мин)
-# Единый глобальный файл-таймер: не важно, к какому эндпоинту — WB ограничивает по токену
+
+# Лимиты WB API (задокументированные и опытным путём):
+# /api/v1/supplier/orders  — 1 req/мин
+# /api/v1/supplier/sales   — 1 req/мин
+# /api/v5/supplier/reportDetailByPeriod — значительно жёстче, ставим 5 мин
+MIN_INTERVAL = 90          # секунд между обычными запросами (orders, sales, stocks)
+MIN_INTERVAL_FINANCE = 310 # секунд между запросами финансового отчёта (страховой запас 5 мин)
+
+# Единый глобальный файл-таймер: WB ограничивает по аккаунту продавца, не по эндпоинту
 _GLOBAL_LOCK_FILE = "/tmp/wb_last_any_request.txt"
-# Оставляем per-endpoint файлы для совместимости, но таймер теперь глобальный
 _LOCK_FILES = {
     "orders":  "/tmp/wb_last_orders.txt",
     "sales":   "/tmp/wb_last_sales.txt",
@@ -62,11 +68,12 @@ class WBClient:
             pass
 
     def _wait_if_needed(self, key: str = "default", on_progress=None):
-        # Ждём относительно ГЛОБАЛЬНОГО таймера (последний запрос к любому эндпоинту WB)
-        # Это исключает блокировку токена при параллельных вызовах разных эндпоинтов
+        # Ждём относительно ГЛОБАЛЬНОГО таймера (последний запрос к любому эндпоинту WB).
+        # Финансовый отчёт имеет более жёсткий лимит — используем MIN_INTERVAL_FINANCE.
+        interval = MIN_INTERVAL_FINANCE if key == "finance" else MIN_INTERVAL
         elapsed = time.time() - self._last_global_request_time()
-        if elapsed < MIN_INTERVAL:
-            wait = int(MIN_INTERVAL - elapsed + 2)
+        if elapsed < interval:
+            wait = int(interval - elapsed + 2)
             if on_progress:
                 on_progress(f"Жду {wait} сек перед следующим запросом WB API...")
             time.sleep(wait)
