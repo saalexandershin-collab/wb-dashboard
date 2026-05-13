@@ -2,8 +2,10 @@ name: Ежедневная синхронизация Ozon
 
 on:
   schedule:
-    - cron: "0 0 * * *"   # 03:00 МСК — заказы и остатки
-    - cron: "0 3 * * *"   # 06:00 МСК — финансы
+    # 03:00 МСК = 00:00 UTC — заказы и остатки
+    - cron: "0 0 * * *"
+    # 05:00 МСК = 02:00 UTC — финансы
+    - cron: "0 2 * * *"
   workflow_dispatch:
     inputs:
       year:
@@ -38,7 +40,7 @@ jobs:
       - name: Установить зависимости
         run: pip install -r requirements.txt
 
-      - name: Синхронизировать заказы Ozon (пред. месяц)
+      - name: Синхронизировать заказы Ozon (пред. месяц + текущий)
         env:
           OZON_CLIENT_ID: ${{ secrets.OZON_CLIENT_ID }}
           OZON_API_KEY: ${{ secrets.OZON_API_KEY }}
@@ -68,7 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event.schedule == '0 3 * * *'
+      github.event.schedule == '0 2 * * *'
     steps:
       - uses: actions/checkout@v4
 

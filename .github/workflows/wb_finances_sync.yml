@@ -1,9 +1,9 @@
-name: Ежедневная синхронизация WB
+name: Финансовый отчёт WB
 
 on:
   schedule:
-    # 02:00 МСК = 23:00 UTC предыдущего дня (МСК = UTC+3, летнего времени нет)
-    - cron: "0 23 * * *"
+    # 04:00 МСК = 01:00 UTC (МСК = UTC+3, летнего времени нет)
+    - cron: "0 1 * * *"
   workflow_dispatch:
     inputs:
       year:
@@ -11,7 +11,7 @@ on:
         required: false
         default: ""
       month:
-        description: "Месяц (1-12)"
+        description: "Месяц (1-12). Можно несколько через запятую: 4,5"
         required: false
         default: ""
 
@@ -30,10 +30,13 @@ jobs:
       - name: Установить зависимости
         run: pip install -r requirements.txt
 
-      - name: Синхронизировать заказы и продажи WB
+      - name: Синхронизировать финансовый отчёт WB
         env:
           WB_API_TOKEN: ${{ secrets.WB_API_TOKEN }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SYNC_YEAR: ${{ github.event.inputs.year }}
           SYNC_MONTH: ${{ github.event.inputs.month }}
-        run: python scripts/run_sync.py
+        run: |
+          YEAR="${SYNC_YEAR:-$(date +%Y)}"
+          MONTH="${SYNC_MONTH:-$(date +%-m)}"
+          SYNC_YEAR="$YEAR" SYNC_MONTH="$MONTH" python scripts/sync_finances.py
