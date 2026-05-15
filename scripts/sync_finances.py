@@ -11,6 +11,7 @@
 
 import os
 import sys
+import time
 import calendar
 from datetime import datetime, date
 
@@ -26,6 +27,8 @@ YEAR     = int(os.environ.get("SYNC_YEAR", datetime.now().year))
 MONTHS_RAW = os.environ.get("SYNC_MONTHS", os.environ.get("SYNC_MONTH", str(datetime.now().month)))
 MONTHS = [int(m.strip()) for m in MONTHS_RAW.split(",")]
 
+INTER_MONTH_DELAY = int(os.environ.get("INTER_MONTH_DELAY", "0"))  # секунд между месяцами
+
 if not TOKEN:
     print("❌ Нужен WB_API_TOKEN")
     sys.exit(1)
@@ -35,7 +38,13 @@ Session = get_session_factory(engine)
 client  = WBClient(TOKEN)
 repo    = FinancialReportRepository()
 
-for month in MONTHS:
+for idx, month in enumerate(MONTHS):
+    # Пауза между месяцами — защита от блокировки WB API
+    if idx > 0 and INTER_MONTH_DELAY > 0:
+        mins = INTER_MONTH_DELAY // 60
+        print(f"\n⏳ Пауза {mins} мин. перед следующим месяцем (защита от блокировки WB)...")
+        time.sleep(INTER_MONTH_DELAY)
+
     last_day = calendar.monthrange(YEAR, month)[1]
     date_from = date(YEAR, month, 1)
     date_to   = date(YEAR, month, last_day)

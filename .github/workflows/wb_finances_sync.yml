@@ -10,14 +10,20 @@ on:
         description: "Год (например 2026)"
         required: false
         default: ""
-      month:
-        description: "Месяц (1-12). Можно несколько через запятую: 4,5"
+      months:
+        description: "Месяцы через запятую (например: 1,2,3)"
         required: false
         default: ""
+      inter_month_delay:
+        description: "Пауза между месяцами в секундах (900 = 15 мин)"
+        required: false
+        default: "900"
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    # Увеличиваем timeout для длинных исторических синков
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
@@ -35,8 +41,13 @@ jobs:
           WB_API_TOKEN: ${{ secrets.WB_API_TOKEN }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SYNC_YEAR: ${{ github.event.inputs.year }}
-          SYNC_MONTH: ${{ github.event.inputs.month }}
+          SYNC_MONTHS: ${{ github.event.inputs.months }}
+          INTER_MONTH_DELAY: ${{ github.event.inputs.inter_month_delay }}
         run: |
           YEAR="${SYNC_YEAR:-$(date +%Y)}"
-          MONTH="${SYNC_MONTH:-$(date +%-m)}"
-          SYNC_YEAR="$YEAR" SYNC_MONTH="$MONTH" python scripts/sync_finances.py
+          # Если months не задан — берём текущий месяц
+          MONTHS="${SYNC_MONTHS:-$(date +%-m)}"
+          DELAY="${INTER_MONTH_DELAY:-0}"
+          echo "Год: $YEAR | Месяцы: $MONTHS | Пауза между месяцами: ${DELAY}с"
+          SYNC_YEAR="$YEAR" SYNC_MONTHS="$MONTHS" INTER_MONTH_DELAY="$DELAY" \
+            python scripts/sync_finances.py
