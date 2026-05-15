@@ -1,4 +1,4 @@
-name: Импорт WB финансов из Excel (разовый)
+name: Импорт WB финансов из Excel
 
 on:
   workflow_dispatch:
@@ -22,64 +22,4 @@ jobs:
       - name: Загрузить данные в БД
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          python - <<'EOF'
-import gzip, json, os, sys
-sys.path.insert(0, '.')
-
-from src.db.models import init_db, get_session_factory
-from src.db.repository import FinancialReportRepository
-from datetime import date, datetime
-
-DB_URL = os.environ["DATABASE_URL"]
-engine = init_db(DB_URL)
-Session = get_session_factory(engine)
-
-data_file = "data/wb_fin_import.json.gz"
-print(f"Читаю {data_file}...")
-with gzip.open(data_file, "rt", encoding="utf-8") as f:
-    records = json.load(f)
-print(f"Записей в файле: {len(records)}")
-
-# Конвертируем типы
-def fix(rec):
-    out = dict(rec)
-    for field in ("date_from", "date_to"):
-        v = out.get(field)
-        if v and isinstance(v, str):
-            try: out[field] = date.fromisoformat(v[:10])
-            except: out[field] = None
-    for field in ("create_dt",):
-        v = out.get(field)
-        if v and isinstance(v, str):
-            try: out[field] = datetime.fromisoformat(v[:19])
-            except: out[field] = None
-    for field in ("nm_id", "quantity", "rrd_id", "realizationreport_id"):
-        v = out.get(field)
-        if v is not None:
-            try: out[field] = int(v)
-            except: out[field] = None
-    for field in ("retail_price", "retail_price_withdisc_rub", "ppvz_for_pay",
-                  "ppvz_sales_commission", "delivery_rub", "penalty",
-                  "additional_payment", "storage_fee", "acquiring_fee"):
-        v = out.get(field)
-        if v is not None:
-            try: out[field] = float(v)
-            except: out[field] = None
-    return out
-
-records = [fix(r) for r in records]
-
-# Грузим батчами по 5000
-BATCH = 5000
-repo = FinancialReportRepository()
-total_saved = 0
-with Session() as session:
-    for i in range(0, len(records), BATCH):
-        batch = records[i:i+BATCH]
-        saved = repo.upsert_many(session, batch)
-        total_saved += saved
-        print(f"  Загружено {min(i+BATCH, len(records))}/{len(records)} ({saved} в этом батче)")
-
-print(f"\nГотово! Загружено в БД: {total_saved} записей")
-EOF
+        run: python scripts/import_wb_from_excel.py
