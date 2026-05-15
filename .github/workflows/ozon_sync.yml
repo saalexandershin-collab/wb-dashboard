@@ -45,16 +45,24 @@ jobs:
           OZON_CLIENT_ID: ${{ secrets.OZON_CLIENT_ID }}
           OZON_API_KEY: ${{ secrets.OZON_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SYNC_YEAR_INPUT: ${{ github.event.inputs.year }}
+          SYNC_MONTH_INPUT: ${{ github.event.inputs.month }}
         run: |
           python - <<'EOF'
           import subprocess, sys, os
           from datetime import date
           from dateutil.relativedelta import relativedelta
-          today = date.today()
-          prev  = today - relativedelta(months=1)
-          for d in [prev, today]:
-              print(f"  → Заказы {d.year}-{d.month:02d}")
-              env = {**os.environ, "SYNC_YEAR": str(d.year), "SYNC_MONTH": str(d.month)}
+          year_input  = os.environ.get("SYNC_YEAR_INPUT", "").strip()
+          month_input = os.environ.get("SYNC_MONTH_INPUT", "").strip()
+          if year_input and month_input:
+              months = [(int(year_input), int(month_input))]
+          else:
+              today = date.today()
+              prev  = today - relativedelta(months=1)
+              months = [(prev.year, prev.month), (today.year, today.month)]
+          for y, m in months:
+              print(f"  → Заказы {y}-{m:02d}")
+              env = {**os.environ, "SYNC_YEAR": str(y), "SYNC_MONTH": str(m)}
               subprocess.run([sys.executable, "scripts/sync_ozon_orders.py"], env=env, check=True)
           EOF
 
@@ -88,15 +96,23 @@ jobs:
           OZON_CLIENT_ID: ${{ secrets.OZON_CLIENT_ID }}
           OZON_API_KEY: ${{ secrets.OZON_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SYNC_YEAR_INPUT: ${{ github.event.inputs.year }}
+          SYNC_MONTH_INPUT: ${{ github.event.inputs.month }}
         run: |
           python - <<'EOF'
           import subprocess, sys, os
           from datetime import date
           from dateutil.relativedelta import relativedelta
-          today = date.today()
-          prev  = today - relativedelta(months=1)
-          for d in [prev, today]:
-              print(f"  → Финансы {d.year}-{d.month:02d}")
-              env = {**os.environ, "SYNC_YEAR": str(d.year), "SYNC_MONTH": str(d.month)}
+          year_input  = os.environ.get("SYNC_YEAR_INPUT", "").strip()
+          month_input = os.environ.get("SYNC_MONTH_INPUT", "").strip()
+          if year_input and month_input:
+              months = [(int(year_input), int(month_input))]
+          else:
+              today = date.today()
+              prev  = today - relativedelta(months=1)
+              months = [(prev.year, prev.month), (today.year, today.month)]
+          for y, m in months:
+              print(f"  → Финансы {y}-{m:02d}")
+              env = {**os.environ, "SYNC_YEAR": str(y), "SYNC_MONTH": str(m)}
               subprocess.run([sys.executable, "scripts/sync_ozon_finances.py"], env=env, check=True)
           EOF
