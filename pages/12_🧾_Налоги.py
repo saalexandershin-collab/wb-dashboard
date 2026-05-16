@@ -2,12 +2,14 @@
 Налоговая нагрузка ИП (УСН 6% + НДС 5%).
 
 Методология:
-  • База ФНС = цена продавца до скидок маркетплейса (ФНС: агент не меняет базу).
-    - WB:   retail_price × quantity  (строки «Продажа»)
-    - Ozon: price × quantity         (из ozon_postings, статус не «cancelled»)
+  • База ФНС:
+    - WB:   retail_price × quantity  (строки «Продажа», цена покупателя)
+    - Ozon: SUM(payout) по не-отменённым постингам
+            payout = реализация МП = «Доход» в финансовом дашборде Ozon
+            (≈ «Отчёт о реализации» ~5.9M за янв-апр; price × qty давало завышенные 10.1M)
   • Фактически к перечислению на р/с:
     - WB:   ppvz_for_pay (все строки, включая услуги/хранение)
-    - Ozon: amount (все OperationAgentDeliveredToCustomer-операции)
+    - Ozon: amount (все транзакции за период)
   • НДС 5% — «изнутри» суммы: база × 5/105
   • УСН 6%  — на (база − НДС): (база − НДС) × 6%
   • 1% СФР  — 1% × MAX(0, годовая_база − 300 000), cap = 300 888 ₽
@@ -114,12 +116,16 @@ def calc_ozon_month(year: int, month: int) -> dict:
     postings = load_ozon_postings(DB_URL, year, month)
     tx       = load_ozon_tx(DB_URL, year, month)
 
-    # База ФНС из постингов: price × quantity, только не отменённые
+    # База ФНС из постингов: payout = реализация Ozon («Доход» в финансовом дашборде).
+    # payout соответствует «Отчёту о реализации» (~5.9M за янв-апр), price × qty давало ~10.1M.
     base = 0.0
     if not postings.empty:
         p = postings[postings.get("is_cancelled", pd.Series(False, index=postings.index)) != True].copy()
-        p["qty"] = p["quantity"].fillna(0).clip(lower=0)
-        base = float((p["price"].fillna(0) * p["qty"]).sum())
+        if "payout" in p.columns:
+            base = float(p["payout"].fillna(0).sum())
+        else:
+            p["qty"] = p["quantity"].fillna(0).clip(lower=0)
+            base = float((p["price"].fillna(0) * p["qty"]).sum())
 
     # К перечислению = сумма amount по всем транзакциям месяца
     payout = 0.0

@@ -116,8 +116,12 @@ if not oz_empty:
 
     df_active["qty"] = df_active["quantity"].fillna(0).clip(lower=0)
 
-    # price = цена продавца = налоговая база ФНС
-    oz_base    = float((df_active["price"].fillna(0) * df_active["qty"]).sum())
+    # Налоговая база Ozon = payout (реализация) — это «Доход» в финансовом дашборде Ozon.
+    # price × qty давало завышенную базу (~10M), payout соответствует «Отчёту о реализации» (~5.9M).
+    if "payout" in df_active.columns:
+        oz_base = float(df_active["payout"].fillna(0).sum())
+    else:
+        oz_base = float((df_active["price"].fillna(0) * df_active["qty"]).sum())
     oz_oborot  = oz_base
     oz_qty_sold = int(df_active["qty"].sum())
 

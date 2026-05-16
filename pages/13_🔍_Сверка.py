@@ -2,9 +2,11 @@
 Сверка: оборот по продажам vs. поступления на РС.
 
 Показывает по каждому месяцу (Jan-Apr 2026 или любой период):
-  • Оборот — что WB/Ozon реализовал покупателям (retail_price_withdisc_rub × qty)
+  • Оборот WB  — retail_price_withdisc_rub × qty (что покупатели заплатили)
+  • Оборот Ozon — SUM(payout) по не-отменённым постингам
+                  payout = реализация на МП (≈ «Отчёт о реализации» Ozon)
+                  Ozon показывает payout как «Доход» в финансовом дашборде
   • Начислено к выплате — ppvz_for_pay (net after commissions & fees)
-  • Удержания — комиссии, логистика, хранение, штрафы
   • Дебиторка — разница: реализовано НА МП, но ещё не перечислено на РС
 
 Методология:
@@ -155,13 +157,17 @@ def calc_wb(df):
 
 def calc_ozon(postings, transactions):
     rows = []
-    # Оборот из постингов
+    # Оборот из постингов: используем payout (= реализация Ozon, «Доход» в финансовом дашборде)
+    # payout уже учитывает промо-скидки Ozon; price × qty давало завышенный результат (~10M vs ~5.9M)
     if not postings.empty:
         for (y, m), g in postings.groupby(["_year", "_month"]):
-            delivered = g[g.get("status", pd.Series(dtype=str)).isin(
-                ["delivered", ""] if "status" in g.columns else [True]
-            )] if "status" in g.columns else g
-            oborot = (g["price"] * g["quantity"].abs()).sum() if "price" in g.columns else 0
+            active = g[~g["is_cancelled"]] if "is_cancelled" in g.columns else g
+            if "payout" in active.columns:
+                oborot = active["payout"].fillna(0).sum()
+            elif "price" in active.columns:
+                oborot = (active["price"].fillna(0) * active["quantity"].abs()).sum()
+            else:
+                oborot = 0
             rows.append({"year": y, "month": m, "oz_oborot": oborot})
 
     # Выплаты из транзакций
