@@ -17,4 +17,4 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PYTHONUNBUFFERED: "1"
-        run: python -u scripts/check_ozon_data.py
+        run: python -u scripts/model_data.py
