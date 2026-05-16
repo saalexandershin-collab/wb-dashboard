@@ -39,6 +39,7 @@ if auth_status:
         pages.insert(7, st.Page("pages/9_💰_Ozon_Финансы.py",  title="Финансы Ozon", icon="💰"))
         pages.append(   st.Page("pages/11_🧾_Расчёт_налога.py", title="Расчёт налога", icon="🧾"))
         pages.append(   st.Page("pages/12_🧾_Налоги.py",        title="Налоги (год)",  icon="🧾"))
+        pages.append(   st.Page("pages/13_🔍_Сверка.py",        title="Сверка / Дебиторка", icon="🔍"))
 
     pg = st.navigation(pages)
     pg.run()
