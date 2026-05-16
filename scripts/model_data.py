@@ -4,23 +4,23 @@ sys.stdout.reconfigure(line_buffering=True)
 conn = psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=15)
 cur = conn.cursor()
 
-print("=== WB данные по месяцам ===")
+print("=== WB данные по месяцам (rr_dt = дата реализации) ===")
 cur.execute("""
     SELECT
-        EXTRACT(YEAR  FROM date_from)::int  AS yr,
-        EXTRACT(MONTH FROM date_from)::int  AS mo,
-        -- База ФНС = retail_price (до скидок) × qty
-        SUM(CASE WHEN supplier_oper_name='Продажа' THEN retail_price * ABS(quantity) ELSE 0 END) AS base_sales,
-        SUM(CASE WHEN supplier_oper_name='Возврат'  THEN retail_price * ABS(quantity) ELSE 0 END) AS base_ret,
-        -- Фактический оборот = retail_price_withdisc_rub × qty
+        EXTRACT(YEAR  FROM rr_dt)::int  AS yr,
+        EXTRACT(MONTH FROM rr_dt)::int  AS mo,
+        -- Оборот = retail_price_withdisc_rub × qty (фактическая цена продажи)
         SUM(CASE WHEN supplier_oper_name='Продажа' THEN retail_price_withdisc_rub * ABS(quantity) ELSE 0 END) AS oborot_sales,
         SUM(CASE WHEN supplier_oper_name='Возврат'  THEN retail_price_withdisc_rub * ABS(quantity) ELSE 0 END) AS oborot_ret,
+        -- Также retail_price (до скидок, если есть)
+        SUM(CASE WHEN supplier_oper_name='Продажа' THEN retail_price * ABS(quantity) ELSE 0 END) AS base_sales,
+        SUM(CASE WHEN supplier_oper_name='Возврат'  THEN retail_price * ABS(quantity) ELSE 0 END) AS base_ret,
         SUM(CASE WHEN supplier_oper_name='Продажа' THEN ABS(quantity) ELSE 0 END) AS sales_qty,
         SUM(CASE WHEN supplier_oper_name='Возврат'  THEN ABS(quantity) ELSE 0 END) AS ret_qty,
-        SUM(ppvz_for_pay) AS ppvz
+        SUM(CASE WHEN supplier_oper_name IN ('Продажа','Возврат') THEN ppvz_for_pay ELSE 0 END) AS ppvz_sales
     FROM financial_reports
     WHERE platform = 'wb'
-      AND date_from >= '2026-01-01' AND date_from < '2026-05-01'
+      AND rr_dt >= '2026-01-01' AND rr_dt < '2026-05-01'
     GROUP BY 1, 2 ORDER BY 1, 2
 """)
 wb_rows = []
