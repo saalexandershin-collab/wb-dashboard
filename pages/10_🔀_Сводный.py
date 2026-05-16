@@ -4,11 +4,7 @@ import plotly.graph_objects as go
 import calendar
 from datetime import date
 
-from src.db.models import init_db, get_session_factory
-from src.db.repository import (
-    OrderRepository, SaleRepository,
-    OzonPostingRepository, OzonTransactionRepository,
-)
+from src.data_loader import load_wb_orders, load_wb_sales, load_ozon_postings, load_ozon_transactions
 
 st.title("🔀 Сводный отчёт WB + Ozon")
 
@@ -35,19 +31,10 @@ st.sidebar.markdown("---")
 st.sidebar.caption(f"Период: {calendar.month_name[month]} {year}")
 
 
-@st.cache_data(ttl=300, show_spinner="Загружаю данные...")
-def load_all(db_url, year, month):
-    engine = init_db(db_url)
-    Session = get_session_factory(engine)
-    with Session() as session:
-        wb_orders = OrderRepository().get_by_month(session, year, month, platform="wb")
-        wb_sales  = SaleRepository().get_by_month(session, year, month, platform="wb")
-        oz_posts  = OzonPostingRepository().get_by_month(session, year, month)
-        oz_txs    = OzonTransactionRepository().get_by_month(session, year, month)
-    return wb_orders, wb_sales, oz_posts, oz_txs
-
-
-wb_orders, wb_sales, oz_posts, oz_txs = load_all(DB_URL, year, month)
+wb_orders = load_wb_orders(DB_URL, year, month)
+wb_sales  = load_wb_sales(DB_URL, year, month)
+oz_posts  = load_ozon_postings(DB_URL, year, month)
+oz_txs    = load_ozon_transactions(DB_URL, year, month)
 
 # ── Агрегаты WB ───────────────────────────────────────────────────────────────
 if not wb_orders.empty:

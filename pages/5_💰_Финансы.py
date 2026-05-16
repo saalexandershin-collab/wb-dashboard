@@ -4,8 +4,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import calendar
 
-from src.db.models import init_db, get_session_factory
-from src.db.repository import FinancialReportRepository
+from src.data_loader import load_wb_financial
 from src.auth import require_role
 
 require_role(["admin"])
@@ -28,14 +27,7 @@ st.sidebar.markdown("---")
 st.sidebar.caption(f"Период: {calendar.month_name[month]} {year}")
 
 # ── Загрузка данных ───────────────────────────────────────────────────────────
-@st.cache_data(ttl=300, show_spinner="Загружаю финансовые данные...")
-def load_fin(db_url: str, year: int, month: int) -> pd.DataFrame:
-    engine = init_db(db_url)
-    Session = get_session_factory(engine)
-    with Session() as session:
-        return FinancialReportRepository().get_by_month(session, year, month)
-
-df = load_fin(DB_URL, year, month)
+df = load_wb_financial(DB_URL, year, month)
 
 if df.empty:
     st.warning("Нет финансовых данных за этот период. Загрузите их командой:")

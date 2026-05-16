@@ -24,8 +24,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
-from src.db.models import init_db, get_session_factory
-from src.db.repository import FinancialReportRepository, OzonPostingRepository, OzonTransactionRepository
+from src.data_loader import load_wb_financial_range, load_ozon_postings_range, load_ozon_transactions_range
 from src.auth import require_role
 
 require_role(["admin"])
@@ -56,67 +55,9 @@ st.sidebar.caption(
 
 
 # ── Загрузка данных ──────────────────────────────────────────────────────────
-@st.cache_data(ttl=300, show_spinner="Загружаю WB...")
-def load_wb_months(db_url, yf, mf, yt, mt):
-    engine = init_db(db_url)
-    Session = get_session_factory(engine)
-    repo = FinancialReportRepository()
-    frames = []
-    y, m = yf, mf
-    while (y, m) <= (yt, mt):
-        df = repo.get_by_month(Session(), y, m, platform="wb")
-        if not df.empty:
-            df["_year"]  = y
-            df["_month"] = m
-            frames.append(df)
-        m += 1
-        if m > 12:
-            m = 1; y += 1
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-
-@st.cache_data(ttl=300, show_spinner="Загружаю Ozon...")
-def load_ozon_months(db_url, yf, mf, yt, mt):
-    engine = init_db(db_url)
-    Session = get_session_factory(engine)
-    repo = OzonPostingRepository()
-    frames = []
-    y, m = yf, mf
-    while (y, m) <= (yt, mt):
-        df = repo.get_by_month(Session(), y, m)
-        if not df.empty:
-            df["_year"]  = y
-            df["_month"] = m
-            frames.append(df)
-        m += 1
-        if m > 12:
-            m = 1; y += 1
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-
-@st.cache_data(ttl=300, show_spinner="Загружаю Ozon транзакции...")
-def load_ozon_tx_months(db_url, yf, mf, yt, mt):
-    engine = init_db(db_url)
-    Session = get_session_factory(engine)
-    try:
-        repo = OzonTransactionRepository()
-        frames = []
-        y, m = yf, mf
-        while (y, m) <= (yt, mt):
-            df = repo.get_by_month(Session(), y, m)
-            if not df.empty:
-                df["_year"]  = y
-                df["_month"] = m
-                frames.append(df)
-            m += 1
-            if m > 12:
-                m = 1; y += 1
-        return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-    except Exception:
-        return pd.DataFrame()
-
-
-wb_raw   = load_wb_months(DB_URL, year_from, month_from, year_to, month_to)
-oz_raw   = load_ozon_months(DB_URL, year_from, month_from, year_to, month_to)
-oz_tx    = load_ozon_tx_months(DB_URL, year_from, month_from, year_to, month_to)
+wb_raw = load_wb_financial_range(DB_URL, year_from, month_from, year_to, month_to)
+oz_raw = load_ozon_postings_range(DB_URL, year_from, month_from, year_to, month_to)
+oz_tx  = load_ozon_transactions_range(DB_URL, year_from, month_from, year_to, month_to)
 
 # ── Расчёт по WB ─────────────────────────────────────────────────────────────
 def calc_wb(df):

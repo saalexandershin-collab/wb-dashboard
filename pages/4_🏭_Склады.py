@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import text
 
 from src.db.models import init_db, get_session_factory
-from src.db.repository import StockRepository, SaleRepository
+from src.data_loader import load_wb_stocks
 st.title("🏭 Остатки и продажи по складам FBO")
 
 if "database" not in st.secrets:
@@ -21,15 +21,16 @@ YELLOW_DAYS   = 14
 RED_DAYS      = 7
 
 # ── Загрузка данных из базы (без WB API) ─────────────────────────────────────
-@st.cache_data(ttl=300, show_spinner="Загружаю данные из базы...")
-def load_data(db_url: str):
+# Остатки — из общего кэша (разделяется между всеми вкладками)
+stocks_df, synced_at = load_wb_stocks(DB_URL)
+
+# Продажи за последние N дней — отдельный запрос с raw SQL, кэшируется локально
+@st.cache_data(ttl=300, show_spinner="Загружаю продажи по складам...")
+def load_recent_sales(db_url: str, days: int) -> pd.DataFrame:
     engine = init_db(db_url)
     Session = get_session_factory(engine)
     with Session() as session:
-        stocks_df = StockRepository().get_all(session)
-        synced_at = StockRepository().get_synced_at(session)
-
-        date_from = (datetime.now() - timedelta(days=DAYS_ANALYSIS)).strftime("%Y-%m-%d")
+        date_from = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         rows = session.execute(text("""
             SELECT nm_id, warehouse_name, COUNT(*) as sales_count
             FROM sales
@@ -37,14 +38,13 @@ def load_data(db_url: str):
               AND sale_id NOT LIKE 'R%'
             GROUP BY nm_id, warehouse_name
         """), {"date_from": date_from}).fetchall()
-        sales_df = (
-            pd.DataFrame(rows, columns=["nm_id", "warehouse_name", "sales_count"])
-            if rows else
-            pd.DataFrame(columns=["nm_id", "warehouse_name", "sales_count"])
-        )
-    return stocks_df, sales_df, synced_at
+    return (
+        pd.DataFrame(rows, columns=["nm_id", "warehouse_name", "sales_count"])
+        if rows else
+        pd.DataFrame(columns=["nm_id", "warehouse_name", "sales_count"])
+    )
 
-stocks_df, sales_df, synced_at = load_data(DB_URL)
+sales_df = load_recent_sales(DB_URL, DAYS_ANALYSIS)
 
 if stocks_df.empty:
     st.warning(

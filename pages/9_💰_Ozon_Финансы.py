@@ -7,8 +7,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from src.db.models import init_db, get_session_factory
-from src.db.repository import OzonTransactionRepository
+from src.data_loader import load_ozon_transactions
 from src.auth import require_role
 
 require_role(["admin"])
@@ -30,15 +29,7 @@ st.sidebar.markdown("---")
 st.sidebar.caption(f"Период: {calendar.month_name[month]} {year}")
 
 
-@st.cache_data(ttl=300, show_spinner="Загружаю финансовые данные Ozon...")
-def load_fin(db_url, year, month):
-    engine = init_db(db_url)
-    Session = get_session_factory(engine)
-    with Session() as session:
-        return OzonTransactionRepository().get_by_month(session, year, month)
-
-
-df = load_fin(DB_URL, year, month)
+df = load_ozon_transactions(DB_URL, year, month)
 
 if df.empty:
     st.warning("Нет финансовых данных Ozon за этот период.")

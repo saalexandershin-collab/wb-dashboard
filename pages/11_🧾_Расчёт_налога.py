@@ -18,8 +18,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from src.db.models import init_db, get_session_factory
-from src.db.repository import FinancialReportRepository, OzonPostingRepository
+from src.data_loader import load_wb_financial, load_ozon_postings
 from src.auth import require_role
 
 require_role(["admin"])
@@ -53,24 +52,8 @@ st.sidebar.caption(f"Период: {calendar.month_name[month]} {year}")
 
 
 # ── Загрузка данных ───────────────────────────────────────────────────────────
-@st.cache_data(ttl=300, show_spinner="Загружаю данные WB...")
-def load_wb(db_url: str, year: int, month: int) -> pd.DataFrame:
-    engine = init_db(db_url)
-    Session = get_session_factory(engine)
-    with Session() as session:
-        return FinancialReportRepository().get_by_month(session, year, month)
-
-
-@st.cache_data(ttl=300, show_spinner="Загружаю постинги Ozon...")
-def load_ozon(db_url: str, year: int, month: int) -> pd.DataFrame:
-    engine = init_db(db_url)
-    Session = get_session_factory(engine)
-    with Session() as session:
-        return OzonPostingRepository().get_by_month(session, year, month)
-
-
-df_wb = load_wb(DB_URL, year, month)
-df_oz = load_ozon(DB_URL, year, month)
+df_wb = load_wb_financial(DB_URL, year, month)
+df_oz = load_ozon_postings(DB_URL, year, month)
 
 
 # ── WB: оборот и база ─────────────────────────────────────────────────────────

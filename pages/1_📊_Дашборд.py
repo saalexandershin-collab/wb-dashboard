@@ -5,8 +5,7 @@ import plotly.graph_objects as go
 from datetime import date
 import calendar
 
-from src.db.models import init_db, get_session_factory
-from src.db.repository import OrderRepository, SaleRepository
+from src.data_loader import load_wb_orders, load_wb_sales
 st.title("📊 Дашборд продаж")
 
 # ── Проверка конфигурации ────────────────────────────────────────────────────
@@ -30,16 +29,8 @@ st.sidebar.markdown("---")
 st.sidebar.caption(f"Период: {calendar.month_name[month]} {year}")
 
 # ── Загрузка данных ──────────────────────────────────────────────────────────
-@st.cache_data(ttl=300, show_spinner="Загружаю данные...")
-def load_data(db_url: str, year: int, month: int):
-    engine = init_db(db_url)
-    Session = get_session_factory(engine)
-    with Session() as session:
-        df_orders = OrderRepository().get_by_month(session, year, month)
-        df_sales = SaleRepository().get_by_month(session, year, month)
-    return df_orders, df_sales
-
-df_orders, df_sales = load_data(DB_URL, year, month)
+df_orders = load_wb_orders(DB_URL, year, month)
+df_sales  = load_wb_sales(DB_URL, year, month)
 
 if df_orders.empty and df_sales.empty:
     st.warning("Данных за выбранный период нет. Загрузите данные в разделе ⚙️ Настройки.")

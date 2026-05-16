@@ -5,8 +5,7 @@ import plotly.graph_objects as go
 import calendar
 from datetime import date
 
-from src.db.models import init_db, get_session_factory
-from src.db.repository import OzonPostingRepository, OzonTransactionRepository
+from src.data_loader import load_ozon_postings, load_ozon_transactions
 
 st.title("📊 Дашборд продаж Ozon")
 
@@ -24,16 +23,8 @@ month = col_m.selectbox("Месяц", list(range(1, 13)), index=today.month - 1,
 st.sidebar.markdown("---")
 st.sidebar.caption(f"Период: {calendar.month_name[month]} {year}")
 
-@st.cache_data(ttl=300, show_spinner="Загружаю данные Ozon...")
-def load(db_url, year, month):
-    engine = init_db(db_url)
-    Session = get_session_factory(engine)
-    with Session() as session:
-        posts = OzonPostingRepository().get_by_month(session, year, month)
-        txs   = OzonTransactionRepository().get_by_month(session, year, month)
-    return posts, txs
-
-posts, txs = load(DB_URL, year, month)
+posts = load_ozon_postings(DB_URL, year, month)
+txs   = load_ozon_transactions(DB_URL, year, month)
 
 if posts.empty and txs.empty:
     st.warning("Нет данных Ozon за этот период. Загрузите командой:")

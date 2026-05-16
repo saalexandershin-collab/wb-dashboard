@@ -7,8 +7,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, numbers
 from openpyxl.utils import get_column_letter
 
-from src.db.models import init_db, get_session_factory
-from src.db.repository import OrderRepository, SaleRepository
+from src.data_loader import load_wb_orders, load_wb_sales
 st.title("📋 Детализация по товарам")
 
 if "database" not in st.secrets or "wildberries" not in st.secrets:
@@ -25,16 +24,8 @@ month = col_m.selectbox("Месяц", list(range(1, 13)), index=today.month - 1,
                         format_func=lambda m: calendar.month_name[m])
 
 # ── Загрузка ─────────────────────────────────────────────────────────────────
-@st.cache_data(ttl=300, show_spinner="Загружаю данные...")
-def load(db_url, year, month):
-    engine = init_db(db_url)
-    Session = get_session_factory(engine)
-    with Session() as session:
-        df_o = OrderRepository().get_by_month(session, year, month)
-        df_s = SaleRepository().get_by_month(session, year, month)
-    return df_o, df_s
-
-df_orders, df_sales = load(DB_URL, year, month)
+df_orders = load_wb_orders(DB_URL, year, month)
+df_sales  = load_wb_sales(DB_URL, year, month)
 
 if df_orders.empty and df_sales.empty:
     st.warning("Нет данных за выбранный период.")

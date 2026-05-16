@@ -26,8 +26,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, numbers
 from openpyxl.utils import get_column_letter
 
-from src.db.models import init_db, get_session_factory
-from src.db.repository import FinancialReportRepository, OzonPostingRepository, OzonTransactionRepository
+from src.data_loader import load_wb_financial, load_ozon_postings, load_ozon_transactions
 from src.auth import require_role
 
 require_role(["admin"])
@@ -65,33 +64,8 @@ st.sidebar.caption(
     "УСН 6% — на (база − НДС)."
 )
 
-# ── Загрузка данных ───────────────────────────────────────────────────────────
-@st.cache_data(ttl=300, show_spinner="Загружаю данные WB...")
-def load_wb(db_url: str, year: int, month: int) -> pd.DataFrame:
-    engine = init_db(db_url)
-    Session = get_session_factory(engine)
-    with Session() as session:
-        return FinancialReportRepository().get_by_month(session, year, month)
-
-
-@st.cache_data(ttl=300, show_spinner="Загружаю данные Ozon...")
-def load_ozon_postings(db_url: str, year: int, month: int) -> pd.DataFrame:
-    engine = init_db(db_url)
-    Session = get_session_factory(engine)
-    with Session() as session:
-        return OzonPostingRepository().get_by_month(session, year, month)
-
-
-@st.cache_data(ttl=300, show_spinner="Загружаю транзакции Ozon...")
-def load_ozon_tx(db_url: str, year: int, month: int) -> pd.DataFrame:
-    engine = init_db(db_url)
-    Session = get_session_factory(engine)
-    with Session() as session:
-        return OzonTransactionRepository().get_by_month(session, year, month)
-
-
 def calc_wb_month(year: int, month: int) -> dict:
-    df = load_wb(DB_URL, year, month)
+    df = load_wb_financial(DB_URL, year, month)
     if df.empty:
         return dict(base=0, payout=0, has_data=False)
 
@@ -114,7 +88,7 @@ def calc_wb_month(year: int, month: int) -> dict:
 
 def calc_ozon_month(year: int, month: int) -> dict:
     postings = load_ozon_postings(DB_URL, year, month)
-    tx       = load_ozon_tx(DB_URL, year, month)
+    tx       = load_ozon_transactions(DB_URL, year, month)
 
     # База ФНС из постингов: payout = реализация Ozon («Доход» в финансовом дашборде).
     # payout соответствует «Отчёту о реализации» (~5.9M за янв-апр), price × qty давало ~10.1M.

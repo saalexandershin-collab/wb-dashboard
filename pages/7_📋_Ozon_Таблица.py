@@ -7,8 +7,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
-from src.db.models import init_db, get_session_factory
-from src.db.repository import OzonPostingRepository, OzonTransactionRepository
+from src.data_loader import load_ozon_postings, load_ozon_transactions
 
 st.title("📋 Детализация по товарам Ozon")
 
@@ -24,16 +23,8 @@ year  = col_y.selectbox("Год",   list(range(today.year, today.year - 3, -1)))
 month = col_m.selectbox("Месяц", list(range(1, 13)), index=today.month - 1,
                         format_func=lambda m: calendar.month_name[m])
 
-@st.cache_data(ttl=300, show_spinner="Загружаю данные Ozon...")
-def load(db_url, year, month):
-    engine = init_db(db_url)
-    Session = get_session_factory(engine)
-    with Session() as session:
-        posts = OzonPostingRepository().get_by_month(session, year, month)
-        txs   = OzonTransactionRepository().get_by_month(session, year, month)
-    return posts, txs
-
-posts, txs = load(DB_URL, year, month)
+posts = load_ozon_postings(DB_URL, year, month)
+txs   = load_ozon_transactions(DB_URL, year, month)
 
 if posts.empty and txs.empty:
     st.warning("Нет данных за выбранный период.")
