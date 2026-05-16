@@ -1,0 +1,63 @@
+2026-05-11 04:30:01 — Запуск синка финансовых отчётов
+  → Финансы 2026-04...
+/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+📅 Загружаю финансовый отчёт за 2026-04-01 — 2026-04-30...
+  Страница 1: получено 24055 строк (итого 24055)
+   Получено строк: 24055
+✅ Сохранено: 24055 строк
+
+Готово.
+  → Финансы 2026-05...
+/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+📅 Загружаю финансовый отчёт за 2026-05-01 — 2026-05-31...
+Жду 61 сек перед следующим запросом (лимит WB API)...
+WB API 429 — жду 120 сек...
+❌ Ошибка API: WB API заблокировал токен на ~567 мин. Создайте новый токен или подождите.
+
+Готово.
+2026-05-11 07:03:12 — Синк финансов завершён, мигрирую в Supabase...
+Подключаюсь к SQLite...
+Подключаюсь к PostgreSQL и создаю таблицы...
+Миграция 5960 заказов...
+Traceback (most recent call last):
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/default.py", line 924, in do_execute
+    cursor.execute(statement, parameters)
+psycopg2.OperationalError: SSL SYSCALL error: EOF detected
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/alexander/wb-dashboard/scripts/migrate_to_pg.py", line 45, in <module>
+    dst.execute(text(f"INSERT INTO orders ({col_str}) VALUES ({placeholders})"),
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/orm/session.py", line 2351, in execute
+    return self._execute_internal(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/orm/session.py", line 2245, in _execute_internal
+    result = conn.execute(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/base.py", line 1418, in execute
+    return meth(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/sql/elements.py", line 515, in _execute_on_connection
+    return connection._execute_clauseelement(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/base.py", line 1640, in _execute_clauseelement
+    ret = self._execute_context(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/base.py", line 2353, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/default.py", line 924, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) SSL SYSCALL error: EOF detected
+
+[SQL: INSERT INTO orders (id, platform, srid, nm_id, supplier_article, barcode, brand, subject, category, warehouse_name, region_name, country_name, total_price, discount_percent, spp, finished_price, price_with_disc, order_date, last_change_date, is_cancel, cancel_dt, created_at) VALUES (%(id)s, %(platform)s, %(srid)s, %(nm_id)s, %(supplier_article)s, %(barcode)s, %(brand)s, %(subject)s, %(category)s, %(warehouse_name)s, %(region_name)s, %(country_name)s, %(total_price)s, %(discount_percent)s, %(spp)s, %(finished_price)s, %(price_with_disc)s, %(order_date)s, %(last_change_date)s, %(is_cancel)s, %(cancel_dt)s, %(created_at)s)]
+[parameters: {'id': 788, 'platform': 'wb', 'srid': 'ebU.i8af64df48a64f7c8ebe086f4323310f7.0.0', 'nm_id': 221075308, 'supplier_article': 'CH6 SSAG SERUM', 'barcode': '2039758637921', 'brand': 'CH6', 'subject': 'Сыворотки', 'category': 'Красота', 'warehouse_name': 'Екатеринбург - Перспективная 14', 'region_name': 'Оренбургская область', 'country_name': 'Россия', 'total_price': 3300.0, 'discount_percent': 0, 'spp': 41.0, 'finished_price': 1956.0, 'price_with_disc': 3300.0, 'order_date': '2026-05-02 19:11:02.000000', 'last_change_date': '2026-05-05 15:17:11.000000', 'is_cancel': False, 'cancel_dt': None, 'created_at': '2026-05-09 17:32:22.725185'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)

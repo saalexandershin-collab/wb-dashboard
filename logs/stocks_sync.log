@@ -15,3 +15,223 @@ WB API вернул 429 — жду 2 сек и повторяю...
 ✅ Сохранено: 179 позиций
 Готово.
 2026-05-10 18:30:09 — Готово
+2026-05-10 21:30:01 — Запуск синка остатков
+/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+📦 Загружаю остатки с WB (dateFrom=2026-04-10)...
+WB API вернул 429 — жду 3 сек и повторяю...
+   Получено позиций: 178
+✅ Сохранено: 178 позиций
+Готово.
+2026-05-10 21:30:13 — Готово
+2026-05-11 00:30:01 — Запуск синка остатков
+/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+📦 Загружаю остатки с WB (dateFrom=2026-04-11)...
+WB API вернул 429 — жду 4 сек и повторяю...
+   Получено позиций: 180
+✅ Сохранено: 180 позиций
+Готово.
+2026-05-11 00:30:12 — Готово
+2026-05-12 12:30:00 — Запуск синка остатков
+/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+📦 Загружаю остатки с WB (dateFrom=2026-04-12)...
+Traceback (most recent call last):
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/connection.py", line 571, in getresponse
+    httplib_response = super().getresponse()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 1349, in getresponse
+    response.begin()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 316, in begin
+    version, status, reason = self._read_status()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 277, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/socket.py", line 704, in readinto
+    return self._sock.recv_into(b)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/ssl.py", line 1241, in recv_into
+    return self.read(nbytes, buffer)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/ssl.py", line 1099, in read
+    return self._sslobj.read(len, buffer)
+socket.timeout: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/util/retry.py", line 490, in increment
+    raise reraise(type(error), error, _stacktrace)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='statistics-api.wildberries.ru', port=443): Read timed out. (read timeout=60)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/alexander/wb-dashboard/scripts/sync_stocks.py", line 34, in <module>
+    raw = client.get_stocks(date_from, on_progress=print)
+  File "/Users/alexander/wb-dashboard/src/api/wb_client.py", line 92, in get_stocks
+    return self._get(
+  File "/Users/alexander/wb-dashboard/src/api/wb_client.py", line 57, in _get
+    response = self.session.get(url, params=params, timeout=60)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/requests/sessions.py", line 602, in get
+    return self.request("GET", url, **kwargs)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/requests/adapters.py", line 713, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='statistics-api.wildberries.ru', port=443): Read timed out. (read timeout=60)
+2026-05-12 21:30:00 — Запуск синка остатков
+/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+📦 Загружаю остатки с WB (dateFrom=2026-04-12)...
+   Получено позиций: 197
+Traceback (most recent call last):
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/default.py", line 924, in do_execute
+    cursor.execute(statement, parameters)
+psycopg2.OperationalError: could not receive data from server: Operation timed out
+SSL SYSCALL error: Operation timed out
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/alexander/wb-dashboard/scripts/sync_stocks.py", line 53, in <module>
+    saved = repo.replace_all(session, records)
+  File "/Users/alexander/wb-dashboard/src/db/repository.py", line 112, in replace_all
+    session.execute(delete(Stock).where(Stock.platform == platform))
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/orm/session.py", line 2351, in execute
+    return self._execute_internal(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/orm/session.py", line 2226, in _execute_internal
+    conn = self._connection_for_bind(bind)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/orm/session.py", line 2095, in _connection_for_bind
+    return trans._connection_for_bind(engine, execution_options)
+  File "<string>", line 2, in _connection_for_bind
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/orm/state_changes.py", line 139, in _go
+    ret_value = fn(self, *arg, **kw)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/orm/session.py", line 1189, in _connection_for_bind
+    conn = bind.connect()
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/base.py", line 3276, in connect
+    return self._connection_cls(self)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/base.py", line 146, in __init__
+    self._dbapi_connection = engine.raw_connection()
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/base.py", line 3300, in raw_connection
+    return self.pool.connect()
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/pool/base.py", line 449, in connect
+    return _ConnectionFairy._checkout(self)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/pool/base.py", line 1263, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/pool/base.py", line 712, in checkout
+    rec = pool._do_get()
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/pool/impl.py", line 180, in _do_get
+    self._dec_overflow()
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/util/langhelpers.py", line 146, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/pool/impl.py", line 177, in _do_get
+    return self._create_connection()
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/pool/base.py", line 390, in _create_connection
+    return _ConnectionRecord(self)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/pool/base.py", line 674, in __init__
+    self.__connect()
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/pool/base.py", line 912, in __connect
+    pool.dispatch.connect.for_modify(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/event/attr.py", line 483, in _exec_w_sync_on_first_run
+    self(*args, **kw)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/event/attr.py", line 497, in __call__
+    fn(*args, **kw)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/util/langhelpers.py", line 1910, in go
+    return once_fn(*arg, **kw)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/create.py", line 749, in first_connect
+    dialect.initialize(c)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/dialects/postgresql/psycopg2.py", line 677, in initialize
+    super().initialize(connection)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/dialects/postgresql/base.py", line 3120, in initialize
+    self._set_backslash_escapes(connection)
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/dialects/postgresql/base.py", line 5004, in _set_backslash_escapes
+    std_string = connection.exec_driver_sql(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/base.py", line 1779, in exec_driver_sql
+    ret = self._execute_context(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/base.py", line 2353, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/Users/alexander/Library/Python/3.9/lib/python/site-packages/sqlalchemy/engine/default.py", line 924, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) could not receive data from server: Operation timed out
+SSL SYSCALL error: Operation timed out
+
+[SQL: show standard_conforming_strings]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-05-13 15:30:00 — Запуск синка остатков
+/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+📦 Загружаю остатки с WB (dateFrom=2026-04-13)...
+   Получено позиций: 199
+✅ Сохранено: 199 позиций
+Готово.
+2026-05-13 15:30:07 — Готово
+2026-05-13 18:30:00 — Запуск синка остатков
+/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+📦 Загружаю остатки с WB (dateFrom=2026-04-13)...
+   Получено позиций: 199
+✅ Сохранено: 199 позиций
+Готово.
+2026-05-13 18:30:13 — Готово
+2026-05-13 21:30:00 — Запуск синка остатков
+/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+📦 Загружаю остатки с WB (dateFrom=2026-04-13)...
+WB API вернул 429 — жду 2 сек и повторяю...
+   Получено позиций: 203
+✅ Сохранено: 203 позиций
+Готово.
+2026-05-13 21:30:14 — Готово
+2026-05-14 18:30:00 — Запуск синка остатков
+/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+📦 Загружаю остатки с WB (dateFrom=2026-04-14)...
+WB API вернул 429 — жду 120 сек и повторяю...
+❌ Ошибка API: WB API заблокировал токен на ~49 мин. Создайте новый токен в личном кабинете WB (Настройки → Доступ к API) или подождите и попробуйте позже.
+2026-05-15 18:30:00 — Запуск синка остатков
+/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+📦 Загружаю остатки с WB (dateFrom=2026-04-15)...
+WB API вернул 429 — жду 120 сек и повторяю...
+❌ Ошибка API: WB API заблокировал токен на ~99 мин. Создайте новый токен в личном кабинете WB (Настройки → Доступ к API) или подождите и попробуйте позже.
+2026-05-15 21:30:00 — Запуск синка остатков
+/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+📦 Загружаю остатки с WB (dateFrom=2026-04-15)...
+WB API вернул 429 — жду 120 сек и повторяю...
+❌ Ошибка API: WB API заблокировал токен на ~99 мин. Создайте новый токен в личном кабинете WB (Настройки → Доступ к API) или подождите и попробуйте позже.
+2026-05-16 00:30:00 — Запуск синка остатков
+/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+📦 Загружаю остатки с WB (dateFrom=2026-04-16)...
+WB API вернул 429 — жду 120 сек и повторяю...
+❌ Ошибка API: WB API заблокировал токен на ~99 мин. Создайте новый токен в личном кабинете WB (Настройки → Доступ к API) или подождите и попробуйте позже.
+2026-05-16 09:30:00 — Запуск синка остатков
+/Users/alexander/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+📦 Загружаю остатки с WB (dateFrom=2026-04-16)...
+WB API вернул 429 — жду 120 сек и повторяю...
+❌ Ошибка API: WB API заблокировал токен на ~109 мин. Создайте новый токен в личном кабинете WB (Настройки → Доступ к API) или подождите и попробуйте позже.
