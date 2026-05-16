@@ -19,7 +19,11 @@ jobs:
       - name: Установить зависимости
         run: pip install -r requirements.txt
 
+      - name: Установить psycopg2
+        run: pip install psycopg2-binary
+
       - name: Загрузить данные в БД
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python scripts/import_wb_from_excel.py
+          PYTHONUNBUFFERED: "1"
+        run: python -u scripts/import_wb_from_excel.py
