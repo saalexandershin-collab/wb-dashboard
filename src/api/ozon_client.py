@@ -177,8 +177,10 @@ def parse_postings(raw: list[dict], order_type: str) -> list[dict]:
                 "offer_id": item.get("offer_id") or fp.get("offer_id") or "",
                 "product_name": item.get("name") or "",
                 "quantity": _int(item.get("quantity")) or 0,
-                # price: сначала из products[], затем из financial_data.products[]
-                "price": _float(item.get("price")) or _float(fp.get("price")),
+                # price: для FBS — из products[].price (цена покупателя)
+                # для FBO — products[].price обычно NULL, берём client_price из financial_data
+                # client_price = цена, которую заплатил покупатель (соответствует отчёту реализации)
+                "price": _float(item.get("price")) or _float(fp.get("client_price")) or _float(fp.get("price")),
                 "total_discount_value": _float(item.get("total_discount_value")),
                 "commission_amount": _float(fp.get("commission_amount")),
                 "payout": _float(fp.get("payout")),
