@@ -20,9 +20,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
 from src.data_loader import load_wb_financial_range, load_ozon_postings_range, load_ozon_transactions_range
-from src.auth import require_role
 
-require_role(["admin"])
 st.title("🔍 Сверка: начислено МП vs. поступило на р/с")
 
 if "database" not in st.secrets:

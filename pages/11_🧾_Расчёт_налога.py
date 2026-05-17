@@ -19,9 +19,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from src.data_loader import load_wb_financial, load_ozon_postings
-from src.auth import require_role
 
-require_role(["admin"])
 st.title("🧾 Расчёт налога")
 
 if "database" not in st.secrets:

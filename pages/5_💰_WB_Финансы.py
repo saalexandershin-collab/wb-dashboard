@@ -5,9 +5,7 @@ import plotly.express as px
 import calendar
 
 from src.data_loader import load_wb_financial
-from src.auth import require_role
 
-require_role(["admin"])
 st.title("💰 Финансовые отчёты")
 
 if "database" not in st.secrets:

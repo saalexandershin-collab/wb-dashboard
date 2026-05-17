@@ -8,9 +8,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from src.data_loader import load_ozon_transactions
-from src.auth import require_role
 
-require_role(["admin"])
 st.title("💰 Финансовый отчёт Ozon")
 
 if "database" not in st.secrets:
