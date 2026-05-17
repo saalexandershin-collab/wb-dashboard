@@ -1,0 +1,32 @@
+name: Заказы WB — быстрая синхронизация
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "Год (пусто = текущий)"
+        required: false
+        default: ""
+      month:
+        description: "Месяц 1-12 (пусто = текущий)"
+        required: false
+        default: ""
+
+jobs:
+  sync-orders:
+    name: "Заказы WB (1 запрос)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: "pip" }
+      - run: pip install -r requirements.txt
+      - name: Синхронизировать заказы
+        env:
+          WB_API_TOKEN: ${{ secrets.WB_API_TOKEN }}
+          DATABASE_URL:  ${{ secrets.DATABASE_URL }}
+          SYNC_YEAR:     ${{ github.event.inputs.year }}
+          SYNC_MONTH:    ${{ github.event.inputs.month }}
+          PYTHONUNBUFFERED: "1"
+        run: python -u scripts/sync_wb_orders_only.py
