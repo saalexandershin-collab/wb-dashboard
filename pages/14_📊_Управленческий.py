@@ -294,7 +294,8 @@ def get_tax_bases(keys: list) -> tuple[float, float]:
 
 SFR_RATE      = 0.01
 SFR_THRESHOLD = 300_000
-SFR_CAP       = 300_888   # максимум 1% СФР в 2026 году
+SFR_CAP       = 321_818   # максимум 1% СФР в 2026 году
+IP_FIXED      = 57_390    # фиксированные страховые взносы ИП 2026 (в год)
 
 
 def calc_taxes(tax_base: float) -> tuple[float, float, float]:
@@ -493,6 +494,9 @@ add("УСН 6%",                         usn,        "= (база − НДС) ×
 add("1% СФР (нарастающим с 01.01)",   sfr_period,
     f"накопл. база {fmt(cum_base_end)}, накопл. СФР {fmt(sfr_to_end)}, кап {fmt(SFR_CAP)}")
 add("— Итого налогов (НДС+УСН+СФР) —", total_tax, "")
+add("", None, "")
+add("📌 Фикс. взносы ИП 2026 (справочно)", IP_FIXED,
+    "57 390 ₽/год — не зависят от оборота, платятся раз в год")
 
 add("", None, "")
 add("✅ Нетто (все поступления − налоги)", net_after_tax,
@@ -518,7 +522,9 @@ col2.metric("База ФНС",               fmt(tax_base_total),
             help="retail_price WB + payout Ozon + брутто прочих каналов")
 col3.metric("НДС + УСН",              fmt(total_nds_usn))
 col4.metric("1% СФР (за период)",     fmt(sfr_period),
-            help=f"Нарастающий с 01.01, кап {fmt(SFR_CAP)}. Накопл. СФР: {fmt(sfr_to_end)}")
+            help=f"1% с превышения 300 000 ₽, кап {fmt(SFR_CAP)}/год. "
+                 f"Накопл. СФР с 01.01: {fmt(sfr_to_end)}. "
+                 f"Фикс. взносы ИП: {fmt(IP_FIXED)}/год.")
 col5.metric("Нетто после налогов",    fmt(net_after_tax))
 
 if not DB_URL:
