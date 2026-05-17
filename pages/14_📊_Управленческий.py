@@ -10,8 +10,8 @@ WB_BANK: dict[tuple, float] = {
     (2025,  7):  5_956_940, (2025,  8):  6_174_124, (2025,  9):  5_543_400,
     (2025, 10):  5_920_803, (2025, 11):  6_220_444, (2025, 12):  5_716_555,
     (2026,  1):  7_446_715, (2026,  2): 10_050_889, (2026,  3):  4_702_393,
-    # Апрель: выплата 1 726 393 отправлена WB 30.04, но зачислена банком 01.05 → в мае
-    (2026,  4):  5_668_677, (2026,  5):  6_614_169,
+    # Апрель: выплата 1 691 049.27 отправлена WB 30.04, но зачислена банком 01.05 → в мае
+    (2026,  4):  5_704_020.80, (2026,  5):  6_578_825.70,
 }
 OZON_BANK: dict[tuple, float] = {
     (2026,  1):   368_052, (2026,  2): 1_451_509, (2026,  3): 1_099_038,
@@ -231,31 +231,110 @@ MGMT_DATA = {
     },
 }
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+# ── Вспомогательные функции ───────────────────────────────────────────────────
 MONTHS = sorted(MGMT_DATA.keys())
 labels = {k: MGMT_DATA[k]["label"] for k in MONTHS}
-sel_label = st.sidebar.selectbox("Период", [labels[k] for k in MONTHS], index=len(MONTHS)-1)
-sel_key = next(k for k in MONTHS if labels[k] == sel_label)
-data = MGMT_DATA[sel_key]
-y, m = sel_key
+
+def fmt(v: float) -> str:
+    return f"{v:,.0f} ₽".replace(",", " ")
+
+TAX_RATE_OTHER = 0.11
+
+def calc_cashflow(keys: list) -> dict:
+    """Агрегирует данные денежного потока по списку ключей (год, месяц)."""
+    wb_bank = sum(WB_BANK.get(k, 0.0)   for k in keys)
+    oz_bank = sum(OZON_BANK.get(k, 0.0) for k in keys)
+    channels = ["Консультанты", "Летуаль", "Золотое Яблоко", "Опт крупный"]
+    net = {ch: 0.0 for ch in channels}
+    for k in keys:
+        for s in MGMT_DATA.get(k, {}).get("sales", []):
+            if s["канал"] in net:
+                net[s["канал"]] += s["нетто"]
+    gross = {ch: (net[ch] / (1 - TAX_RATE_OTHER) if net[ch] > 0 else 0) for ch in channels}
+    tax_base  = wb_bank + oz_bank + sum(gross.values())
+    nds       = tax_base * 5 / 105
+    usn       = (tax_base - nds) * 0.06
+    total_tax = nds + usn
+    return dict(
+        wb_bank=wb_bank, oz_bank=oz_bank, net=net, gross=gross,
+        tax_base=tax_base, nds=nds, usn=usn, total_tax=total_tax,
+        net_after_tax=(wb_bank + oz_bank) - total_tax,
+    )
+
+def render_cashflow(cf: dict):
+    rows = []
+    def add(label, val, note=""):
+        rows.append({"Показатель": label, "Сумма, ₽": val, "Примечание": note})
+    add("WB — поступления на р/с",         cf["wb_bank"],   "фактические банковские выплаты")
+    add("Ozon — поступления на р/с",        cf["oz_bank"],   "фактические банковские выплаты")
+    add("— Итого р/с (WB + Ozon) —",       cf["wb_bank"] + cf["oz_bank"], "")
+    for ch in ["Консультанты", "Летуаль", "Золотое Яблоко", "Опт крупный"]:
+        if cf["net"][ch]:
+            add(f"{ch} (нетто Excel)", cf["net"][ch], f"брутто ≈ {fmt(cf['gross'][ch])}")
+    add("", None, "")
+    add("Налоговая база (брутто всего)",    cf["tax_base"],  "р/с + прочие / (1−11%)")
+    add("НДС 5% (изнутри)",                cf["nds"],       "= база × 5/105")
+    add("УСН 6%",                          cf["usn"],       "= (база − НДС) × 6%")
+    add("— Итого налогов —",               cf["total_tax"], "")
+    add("", None, "")
+    add("✅ Нетто (р/с минус налоги)",     cf["net_after_tax"], "= WB р/с + Ozon р/с − налоги")
+    df = pd.DataFrame(rows)
+    df["Сумма, ₽"] = df["Сумма, ₽"].where(df["Сумма, ₽"].notna(), 0)
+    st.dataframe(df, use_container_width=True, hide_index=True,
+                 column_config={"Сумма, ₽": st.column_config.NumberColumn(format="%,.0f")})
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Поступления WB+Ozon",  fmt(cf["wb_bank"] + cf["oz_bank"]))
+    col2.metric("Налоги (НДС + УСН)",   fmt(cf["total_tax"]))
+    col3.metric("Нетто после налогов",  fmt(cf["net_after_tax"]))
+
+# ── Sidebar ───────────────────────────────────────────────────────────────────
+mode = st.sidebar.radio("Режим просмотра", ["Месяц", "Период"], horizontal=True)
+st.sidebar.markdown("---")
+
+if mode == "Месяц":
+    sel_label   = st.sidebar.selectbox("Выберите месяц", [labels[k] for k in MONTHS], index=len(MONTHS)-1)
+    sel_key     = next(k for k in MONTHS if labels[k] == sel_label)
+    sel_keys    = [sel_key]
+    period_title = labels[sel_key]
+else:
+    label_list  = [labels[k] for k in MONTHS]
+    from_label  = st.sidebar.selectbox("С",  label_list, index=0)
+    to_label    = st.sidebar.selectbox("По", label_list, index=len(MONTHS)-1)
+    from_key    = next(k for k in MONTHS if labels[k] == from_label)
+    to_key      = next(k for k in MONTHS if labels[k] == to_label)
+    if from_key > to_key:
+        st.sidebar.error("Начало периода позже конца")
+        st.stop()
+    sel_keys     = [k for k in MONTHS if from_key <= k <= to_key]
+    period_title = f"{from_label} — {to_label}"
 
 st.sidebar.markdown("---")
 st.sidebar.caption("Для добавления нового месяца передайте файл отчёта ассистенту.")
 
-def fmt(v: float) -> str:
-    return f"{v:,.0f} ₽".replace(",", " ")
+st.subheader(f"📅 {period_title}", divider="gray")
 
 # ── 1. Продажи по каналам ────────────────────────────────────────────────────
 st.markdown("## 📦 Продажи по каналам")
 st.caption("Суммы — нетто (после комиссий МП, НДС, УСН), из управленческой таблицы Excel")
 
-sales_rows = [s for s in data["sales"] if s["нетто"] > 0]
+channels_order = ["WB", "Ozon", "Консультанты", "Летуаль", "Золотое Яблоко", "Опт крупный"]
+agg_sales: dict[str, dict] = {ch: {"кол-во": 0, "нетто": 0} for ch in channels_order}
+for k in sel_keys:
+    for s in MGMT_DATA.get(k, {}).get("sales", []):
+        if s["канал"] in agg_sales:
+            agg_sales[s["канал"]]["кол-во"] += s["кол-во"]
+            agg_sales[s["канал"]]["нетто"]  += s["нетто"]
+
+sales_rows = [
+    {"Канал": ch, "Кол-во": agg_sales[ch]["кол-во"], "Нетто, ₽": agg_sales[ch]["нетто"]}
+    for ch in channels_order if agg_sales[ch]["нетто"] > 0
+]
 if sales_rows:
-    sdf = pd.DataFrame(sales_rows).rename(columns={
-        "канал": "Канал", "кол-во": "Кол-во", "нетто": "Нетто, ₽"
-    })
+    sdf = pd.DataFrame(sales_rows)
     totals_row = pd.DataFrame([{
-        "Канал": "ИТОГО", "Кол-во": sdf["Кол-во"].sum(), "Нетто, ₽": sdf["Нетто, ₽"].sum()
+        "Канал": "ИТОГО",
+        "Кол-во": sdf["Кол-во"].sum(),
+        "Нетто, ₽": sdf["Нетто, ₽"].sum(),
     }])
     st.dataframe(
         pd.concat([sdf, totals_row], ignore_index=True),
@@ -267,8 +346,10 @@ else:
 
 # ── 2. Расходы ───────────────────────────────────────────────────────────────
 st.markdown("## 💸 Расходы")
-exp_tuples = data["expenses"]
-edf = pd.DataFrame(exp_tuples, columns=["Дата", "Статья расхода", "Сумма, ₽"])
+all_expenses = []
+for k in sel_keys:
+    all_expenses.extend(MGMT_DATA.get(k, {}).get("expenses", []))
+edf = pd.DataFrame(all_expenses, columns=["Дата", "Статья расхода", "Сумма, ₽"])
 total_exp = edf["Сумма, ₽"].sum()
 
 st.dataframe(
@@ -279,78 +360,25 @@ st.dataframe(
 
 c1, c2 = st.columns(2)
 c1.metric("Итого расходы", fmt(total_exp))
-c2.metric("Сальдо (входящий остаток)", fmt(data["сальдо"]))
+if mode == "Месяц" and sel_keys:
+    c2.metric("Сальдо (входящий остаток)", fmt(MGMT_DATA[sel_keys[0]]["сальдо"]))
 
 # ── 3. Фактический денежный поток ────────────────────────────────────────────
 st.markdown("## 💰 Фактический денежный поток")
-st.caption("Поступления WB/Ozon — реальные банковские выплаты. "
-           "Прочие каналы — суммы нетто из Excel (уже за вычетом 11% налога). "
-           "Налоговая база рассчитывается с учётом всех каналов.")
-
-wb_bank = WB_BANK.get((y, m), 0.0)
-oz_bank = OZON_BANK.get((y, m), 0.0)
-
-sales_map = {s["канал"]: s["нетто"] for s in data["sales"]}
-kons_net   = float(sales_map.get("Консультанты",   0))
-letual_net = float(sales_map.get("Летуаль",         0))
-zya_net    = float(sales_map.get("Золотое Яблоко",  0))
-opt_net    = float(sales_map.get("Опт крупный",     0))
-
-# Прочие каналы: нетто → брутто (ставка 11%)
-TAX_RATE_OTHER = 0.11
-kons_gross   = kons_net   / (1 - TAX_RATE_OTHER) if kons_net   > 0 else 0
-letual_gross = letual_net / (1 - TAX_RATE_OTHER) if letual_net > 0 else 0
-zya_gross    = zya_net    / (1 - TAX_RATE_OTHER) if zya_net    > 0 else 0
-opt_gross    = opt_net    / (1 - TAX_RATE_OTHER) if opt_net    > 0 else 0
-
-# Налоговая база = р/с WB + р/с Ozon + брутто прочих каналов
-tax_base = wb_bank + oz_bank + kons_gross + letual_gross + zya_gross + opt_gross
-
-# НДС 5% «изнутри»
-nds = tax_base * 5 / 105
-# УСН 6%
-usn = (tax_base - nds) * 0.06
-total_tax = nds + usn
-
-# Нетто = поступления WB/Ozon − суммарный налог
-net_after_tax = (wb_bank + oz_bank) - total_tax
-
-rows = []
-def add(label, val, note=""):
-    rows.append({"Показатель": label, "Сумма, ₽": val, "Примечание": note})
-
-add("WB — поступления на р/с",         wb_bank,    "фактические банковские выплаты")
-add("Ozon — поступления на р/с",        oz_bank,    "фактические банковские выплаты")
-add("— Итого р/с (WB + Ozon) —",       wb_bank + oz_bank, "")
-
-if kons_net:
-    add("Консультанты (нетто Excel)",   kons_net,   f"брутто ≈ {fmt(kons_gross)}")
-if letual_net:
-    add("Летуаль (нетто Excel)",        letual_net, f"брутто ≈ {fmt(letual_gross)}")
-if zya_net:
-    add("Золотое Яблоко (нетто Excel)", zya_net,    f"брутто ≈ {fmt(zya_gross)}")
-if opt_net:
-    add("Опт крупный (нетто Excel)",    opt_net,    f"брутто ≈ {fmt(opt_gross)}")
-
-add("", None, "")  # разделитель
-add("Налоговая база (брутто всего)",    tax_base,   "р/с + прочие / (1−11%)")
-add("НДС 5% (изнутри)",                nds,        "= база × 5/105")
-add("УСН 6%",                          usn,        "= (база − НДС) × 6%")
-add("— Итого налогов —",               total_tax,  "")
-add("", None, "")
-add("✅ Нетто (р/с минус налоги)",     net_after_tax, "= WB р/с + Ozon р/с − налоги")
-
-cf_df = pd.DataFrame(rows)
-cf_df["Сумма, ₽"] = cf_df["Сумма, ₽"].where(cf_df["Сумма, ₽"].notna(), 0)
-
-st.dataframe(
-    cf_df, use_container_width=True, hide_index=True,
-    column_config={"Сумма, ₽": st.column_config.NumberColumn(format="%,.0f")},
+st.caption(
+    "Поступления WB/Ozon — реальные банковские выплаты. "
+    "Прочие каналы — суммы нетто из Excel (уже за вычетом 11% налога). "
+    "Налоговая база рассчитывается с учётом всех каналов."
 )
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Поступления WB+Ozon", fmt(wb_bank + oz_bank))
-col2.metric("Налоги (НДС + УСН)",  fmt(total_tax))
-col3.metric("Нетто после налогов", fmt(net_after_tax))
+cf = calc_cashflow(sel_keys)
+render_cashflow(cf)
 
-st.caption(f"📋 Итого в кассе РФ (справочно, из таблицы Excel): {fmt(data['итого_кассе'])}")
+if mode == "Месяц" and sel_keys:
+    st.caption(
+        f"📋 Итого в кассе РФ (справочно, из таблицы Excel): "
+        f"{fmt(MGMT_DATA[sel_keys[0]]['итого_кассе'])}"
+    )
+else:
+    total_kasse = sum(MGMT_DATA.get(k, {}).get("итого_кассе", 0) for k in sel_keys)
+    st.caption(f"📋 Итого в кассе РФ за период (сумма месяцев): {fmt(total_kasse)}")
