@@ -292,10 +292,67 @@ def get_tax_bases(keys: list) -> tuple[float, float]:
     return wb_total, oz_total
 
 
+SFR_RATE      = 0.01
+SFR_THRESHOLD = 300_000
+SFR_CAP       = 300_888   # максимум 1% СФР в 2026 году
+
+
 def calc_taxes(tax_base: float) -> tuple[float, float, float]:
     nds = tax_base * NDS_RATE
     usn = (tax_base - nds) * USN_RATE
     return nds, usn, nds + usn
+
+
+def sfr_on_cumbase(cumulative_base: float) -> float:
+    """1% СФР с нарастающей базы (свыше 300 тыс., кап 300 888)."""
+    return min(float(SFR_CAP), max(0.0, (cumulative_base - SFR_THRESHOLD) * SFR_RATE))
+
+
+def get_other_gross_for_months(year: int, months: list[int]) -> float:
+    """Сумма брутто прочих каналов (из MGMT_DATA) за список месяцев."""
+    channels = ["Консультанты", "Летуаль", "Золотое Яблоко", "Опт крупный"]
+    total = 0.0
+    for m in months:
+        for s in MGMT_DATA.get((year, m), {}).get("sales", []):
+            if s["канал"] in channels and s["нетто"] > 0:
+                total += s["нетто"] / (1 - TAX_RATE_OTHER)
+    return total
+
+
+def calc_sfr_for_period(sel_keys: list) -> tuple[float, float, float]:
+    """
+    Возвращает (sfr_period, cum_base_end, sfr_to_end):
+      sfr_period  — 1% СФР, относящийся к выбранному периоду (инкрементально)
+      cum_base_end — накопленная база с 01.01 по конец периода
+      sfr_to_end  — накопленный СФР с 01.01 по конец периода
+    Предполагаем, что все ключи — один год.
+    """
+    if not sel_keys:
+        return 0.0, 0.0, 0.0
+
+    year       = sel_keys[-1][0]
+    last_month = sel_keys[-1][1]
+    first_month= sel_keys[0][1]
+
+    # Накопленная база: январь → конец периода
+    months_jan_to_end    = list(range(1, last_month + 1))
+    wb_end, oz_end       = get_tax_bases([(year, m) for m in months_jan_to_end])
+    other_end            = get_other_gross_for_months(year, months_jan_to_end)
+    cum_base_end         = wb_end + oz_end + other_end
+
+    # Накопленная база: январь → месяц ДО начала периода
+    if first_month > 1:
+        months_jan_to_before = list(range(1, first_month))
+        wb_bef, oz_bef       = get_tax_bases([(year, m) for m in months_jan_to_before])
+        other_bef            = get_other_gross_for_months(year, months_jan_to_before)
+        cum_base_before      = wb_bef + oz_bef + other_bef
+    else:
+        cum_base_before = 0.0
+
+    sfr_to_end    = sfr_on_cumbase(cum_base_end)
+    sfr_to_before = sfr_on_cumbase(cum_base_before)
+    sfr_period    = sfr_to_end - sfr_to_before
+    return sfr_period, cum_base_end, sfr_to_end
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -390,15 +447,19 @@ total_bank = wb_bank + oz_bank + sum(other_net.values())
 # ─ 3б. Налоговая база (ФНС: цена продавца WB + payout Ozon) ──────────────
 with st.spinner("Загружаю налоговую базу из БД…"):
     wb_base_fns, oz_base_fns = get_tax_bases(sel_keys)
+    sfr_period, cum_base_end, sfr_to_end = calc_sfr_for_period(sel_keys)
 
 # Прочие каналы: нетто → брутто (ставка 11%)
 other_gross_total = sum(other_gross.values())
 tax_base_total    = wb_base_fns + oz_base_fns + other_gross_total
 
-# Налоги считаются от правильной базы ФНС
-nds, usn, total_tax = calc_taxes(tax_base_total)
+# НДС + УСН от базы ФНС
+nds, usn, total_nds_usn = calc_taxes(tax_base_total)
 
-# Нетто = все поступления (WB р/с + Ozon р/с + прочие каналы нетто) − налоги
+# Итого налогов + 1% СФР
+total_tax = total_nds_usn + sfr_period
+
+# Нетто = все поступления − все налоги (НДС + УСН + СФР)
 total_receipts = wb_bank + oz_bank + sum(other_net.values())
 net_after_tax  = total_receipts - total_tax
 
@@ -427,13 +488,15 @@ add("— Итого налоговая база —",        tax_base_total, "")
 
 add("", None, "")
 add("", None, "── Налоги (от базы ФНС) ────────────────────────")
-add(f"НДС 5% (изнутри)",               nds,       "= база × 5/105")
-add(f"УСН 6%",                         usn,       "= (база − НДС) × 6%")
-add("— Итого налогов —",               total_tax, "")
+add("НДС 5% (изнутри)",               nds,        "= база × 5/105")
+add("УСН 6%",                         usn,        "= (база − НДС) × 6%")
+add("1% СФР (нарастающим с 01.01)",   sfr_period,
+    f"накопл. база {fmt(cum_base_end)}, накопл. СФР {fmt(sfr_to_end)}, кап {fmt(SFR_CAP)}")
+add("— Итого налогов (НДС+УСН+СФР) —", total_tax, "")
 
 add("", None, "")
 add("✅ Нетто (все поступления − налоги)", net_after_tax,
-    "WB р/с + Ozon р/с + прочие каналы — налоги от базы ФНС")
+    "WB р/с + Ozon р/с + прочие каналы — НДС − УСН − 1% СФР")
 
 cf_df = pd.DataFrame(rows)
 cf_df["Сумма, ₽"] = cf_df["Сумма, ₽"].where(cf_df["Сумма, ₽"].notna(), 0)
@@ -448,13 +511,15 @@ st.dataframe(
     column_config={"Сумма, ₽": st.column_config.NumberColumn(format="%,.0f")},
 )
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Все поступления",      fmt(total_receipts),
+col1, col2, col3, col4, col5 = st.columns(5)
+col1.metric("Все поступления",        fmt(total_receipts),
             help="WB р/с + Ozon р/с + Консультанты + Летуаль + Золотое Яблоко + Опт крупный")
-col2.metric("База ФНС",             fmt(tax_base_total),
+col2.metric("База ФНС",               fmt(tax_base_total),
             help="retail_price WB + payout Ozon + брутто прочих каналов")
-col3.metric("Налоги (НДС + УСН)",   fmt(total_tax))
-col4.metric("Нетто после налогов",  fmt(net_after_tax))
+col3.metric("НДС + УСН",              fmt(total_nds_usn))
+col4.metric("1% СФР (за период)",     fmt(sfr_period),
+            help=f"Нарастающий с 01.01, кап {fmt(SFR_CAP)}. Накопл. СФР: {fmt(sfr_to_end)}")
+col5.metric("Нетто после налогов",    fmt(net_after_tax))
 
 if not DB_URL:
     st.warning("⚠️ База данных не настроена — налоговая база ФНС недоступна. "
