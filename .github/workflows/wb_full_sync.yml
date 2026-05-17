@@ -1,17 +1,14 @@
-name: Ежедневная синхронизация WB
+name: WB полная синхронизация (заказы → 5 мин → продажи)
 
 on:
-  schedule:
-    # 02:00 МСК = 23:00 UTC предыдущего дня (МСК = UTC+3, летнего времени нет)
-    - cron: "0 23 * * *"
   workflow_dispatch:
     inputs:
       year:
-        description: "Год (например 2026)"
+        description: "Год (пусто = текущий)"
         required: false
         default: ""
       month:
-        description: "Месяц (1-12)"
+        description: "Месяц 1-12 (пусто = текущий)"
         required: false
         default: ""
 
@@ -29,8 +26,8 @@ jobs:
         env:
           WB_API_TOKEN: ${{ secrets.WB_API_TOKEN }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SYNC_YEAR:  ${{ github.event.inputs.year }}
-          SYNC_MONTH: ${{ github.event.inputs.month }}
+          SYNC_YEAR:    ${{ github.event.inputs.year }}
+          SYNC_MONTH:   ${{ github.event.inputs.month }}
           PYTHONUNBUFFERED: "1"
         run: python -u scripts/sync_wb_orders_only.py
 
@@ -40,7 +37,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ждём 5 минут (лимит WB API)
-        run: sleep 300
+        run: |
+          echo "⏱ Пауза 5 минут перед запросом продаж..."
+          sleep 300
+          echo "✅ Продолжаем"
 
   sync-sales:
     name: "3. Продажи WB"
@@ -56,7 +56,7 @@ jobs:
         env:
           WB_API_TOKEN: ${{ secrets.WB_API_TOKEN }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SYNC_YEAR:  ${{ github.event.inputs.year }}
-          SYNC_MONTH: ${{ github.event.inputs.month }}
+          SYNC_YEAR:    ${{ github.event.inputs.year }}
+          SYNC_MONTH:   ${{ github.event.inputs.month }}
           PYTHONUNBUFFERED: "1"
         run: python -u scripts/sync_wb_sales_only.py
