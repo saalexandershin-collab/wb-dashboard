@@ -1,7 +1,11 @@
 import streamlit as st
 import pandas as pd
 
+from src.data_loader import load_wb_financial, load_ozon_postings
+
 st.title("📊 Управленческий отчёт")
+
+DB_URL = st.secrets.get("database", {}).get("url") if "database" in st.secrets else None
 
 # ── Фактические поступления на р/с ───────────────────────────────────────────
 WB_BANK: dict[tuple, float] = {
@@ -239,69 +243,76 @@ def fmt(v: float) -> str:
     return f"{v:,.0f} ₽".replace(",", " ")
 
 TAX_RATE_OTHER = 0.11
+NDS_RATE = 5 / 105
+USN_RATE = 0.06
 
-def calc_cashflow(keys: list) -> dict:
-    """Агрегирует данные денежного потока по списку ключей (год, месяц)."""
-    wb_bank = sum(WB_BANK.get(k, 0.0)   for k in keys)
-    oz_bank = sum(OZON_BANK.get(k, 0.0) for k in keys)
-    channels = ["Консультанты", "Летуаль", "Золотое Яблоко", "Опт крупный"]
-    net = {ch: 0.0 for ch in channels}
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_tax_base_from_db(year: int, month: int) -> tuple[float, float]:
+    """
+    Возвращает (wb_base_fns, oz_base_fns) — налоговую базу ФНС из БД.
+    WB:   retail_price × qty (продажи минус возвраты)
+    Ozon: payout из отчёта о реализации
+    """
+    if not DB_URL:
+        return 0.0, 0.0
+    try:
+        # WB
+        df_wb = load_wb_financial(DB_URL, year, month)
+        wb_base = 0.0
+        if not df_wb.empty:
+            sales = df_wb[df_wb["doc_type_name"] == "Продажа"].copy()
+            ret   = df_wb[df_wb["doc_type_name"] == "Возврат"].copy()
+            sales["qty"] = sales["quantity"].fillna(0).clip(lower=0)
+            ret["qty"]   = ret["quantity"].fillna(0).abs()
+            wb_base = float(
+                (sales["retail_price"].fillna(0) * sales["qty"]).sum()
+                - (ret["retail_price"].fillna(0) * ret["qty"]).sum()
+            )
+        # Ozon
+        df_oz = load_ozon_postings(DB_URL, year, month)
+        oz_base = 0.0
+        if not df_oz.empty:
+            mask = df_oz.get("is_cancelled", pd.Series(False, index=df_oz.index)) != True
+            active = df_oz[mask]
+            if "payout" in active.columns:
+                oz_base = float(active["payout"].fillna(0).sum())
+        return wb_base, oz_base
+    except Exception:
+        return 0.0, 0.0
+
+
+def get_tax_bases(keys: list) -> tuple[float, float]:
+    """Суммарная налоговая база ФНС за список месяцев."""
+    wb_total = oz_total = 0.0
     for k in keys:
-        for s in MGMT_DATA.get(k, {}).get("sales", []):
-            if s["канал"] in net:
-                net[s["канал"]] += s["нетто"]
-    gross = {ch: (net[ch] / (1 - TAX_RATE_OTHER) if net[ch] > 0 else 0) for ch in channels}
-    tax_base  = wb_bank + oz_bank + sum(gross.values())
-    nds       = tax_base * 5 / 105
-    usn       = (tax_base - nds) * 0.06
-    total_tax = nds + usn
-    return dict(
-        wb_bank=wb_bank, oz_bank=oz_bank, net=net, gross=gross,
-        tax_base=tax_base, nds=nds, usn=usn, total_tax=total_tax,
-        net_after_tax=(wb_bank + oz_bank) - total_tax,
-    )
+        wb, oz = get_tax_base_from_db(k[0], k[1])
+        wb_total += wb
+        oz_total += oz
+    return wb_total, oz_total
 
-def render_cashflow(cf: dict):
-    rows = []
-    def add(label, val, note=""):
-        rows.append({"Показатель": label, "Сумма, ₽": val, "Примечание": note})
-    add("WB — поступления на р/с",         cf["wb_bank"],   "фактические банковские выплаты")
-    add("Ozon — поступления на р/с",        cf["oz_bank"],   "фактические банковские выплаты")
-    add("— Итого р/с (WB + Ozon) —",       cf["wb_bank"] + cf["oz_bank"], "")
-    for ch in ["Консультанты", "Летуаль", "Золотое Яблоко", "Опт крупный"]:
-        if cf["net"][ch]:
-            add(f"{ch} (нетто Excel)", cf["net"][ch], f"брутто ≈ {fmt(cf['gross'][ch])}")
-    add("", None, "")
-    add("Налоговая база (брутто всего)",    cf["tax_base"],  "р/с + прочие / (1−11%)")
-    add("НДС 5% (изнутри)",                cf["nds"],       "= база × 5/105")
-    add("УСН 6%",                          cf["usn"],       "= (база − НДС) × 6%")
-    add("— Итого налогов —",               cf["total_tax"], "")
-    add("", None, "")
-    add("✅ Нетто (р/с минус налоги)",     cf["net_after_tax"], "= WB р/с + Ozon р/с − налоги")
-    df = pd.DataFrame(rows)
-    df["Сумма, ₽"] = df["Сумма, ₽"].where(df["Сумма, ₽"].notna(), 0)
-    st.dataframe(df, use_container_width=True, hide_index=True,
-                 column_config={"Сумма, ₽": st.column_config.NumberColumn(format="%,.0f")})
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Поступления WB+Ozon",  fmt(cf["wb_bank"] + cf["oz_bank"]))
-    col2.metric("Налоги (НДС + УСН)",   fmt(cf["total_tax"]))
-    col3.metric("Нетто после налогов",  fmt(cf["net_after_tax"]))
+
+def calc_taxes(tax_base: float) -> tuple[float, float, float]:
+    nds = tax_base * NDS_RATE
+    usn = (tax_base - nds) * USN_RATE
+    return nds, usn, nds + usn
+
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 mode = st.sidebar.radio("Режим просмотра", ["Месяц", "Период"], horizontal=True)
 st.sidebar.markdown("---")
 
 if mode == "Месяц":
-    sel_label   = st.sidebar.selectbox("Выберите месяц", [labels[k] for k in MONTHS], index=len(MONTHS)-1)
-    sel_key     = next(k for k in MONTHS if labels[k] == sel_label)
-    sel_keys    = [sel_key]
+    sel_label    = st.sidebar.selectbox("Выберите месяц", [labels[k] for k in MONTHS], index=len(MONTHS)-1)
+    sel_key      = next(k for k in MONTHS if labels[k] == sel_label)
+    sel_keys     = [sel_key]
     period_title = labels[sel_key]
 else:
-    label_list  = [labels[k] for k in MONTHS]
-    from_label  = st.sidebar.selectbox("С",  label_list, index=0)
-    to_label    = st.sidebar.selectbox("По", label_list, index=len(MONTHS)-1)
-    from_key    = next(k for k in MONTHS if labels[k] == from_label)
-    to_key      = next(k for k in MONTHS if labels[k] == to_label)
+    label_list   = [labels[k] for k in MONTHS]
+    from_label   = st.sidebar.selectbox("С",  label_list, index=0)
+    to_label     = st.sidebar.selectbox("По", label_list, index=len(MONTHS)-1)
+    from_key     = next(k for k in MONTHS if labels[k] == from_label)
+    to_key       = next(k for k in MONTHS if labels[k] == to_label)
     if from_key > to_key:
         st.sidebar.error("Начало периода позже конца")
         st.stop()
@@ -332,9 +343,7 @@ sales_rows = [
 if sales_rows:
     sdf = pd.DataFrame(sales_rows)
     totals_row = pd.DataFrame([{
-        "Канал": "ИТОГО",
-        "Кол-во": sdf["Кол-во"].sum(),
-        "Нетто, ₽": sdf["Нетто, ₽"].sum(),
+        "Канал": "ИТОГО", "Кол-во": sdf["Кол-во"].sum(), "Нетто, ₽": sdf["Нетто, ₽"].sum(),
     }])
     st.dataframe(
         pd.concat([sdf, totals_row], ignore_index=True),
@@ -365,14 +374,91 @@ if mode == "Месяц" and sel_keys:
 
 # ── 3. Фактический денежный поток ────────────────────────────────────────────
 st.markdown("## 💰 Фактический денежный поток")
+
+# ─ 3а. Поступления на р/с ─────────────────────────────────────────────────
+wb_bank = sum(WB_BANK.get(k, 0.0)   for k in sel_keys)
+oz_bank = sum(OZON_BANK.get(k, 0.0) for k in sel_keys)
+
+# Прочие каналы из управленческой таблицы
+other_channels = ["Консультанты", "Летуаль", "Золотое Яблоко", "Опт крупный"]
+other_net  = {ch: agg_sales.get(ch, {}).get("нетто", 0) for ch in other_channels}
+other_gross = {ch: (other_net[ch] / (1 - TAX_RATE_OTHER) if other_net[ch] > 0 else 0)
+               for ch in other_channels}
+
+total_bank = wb_bank + oz_bank + sum(other_net.values())
+
+# ─ 3б. Налоговая база (ФНС: цена продавца WB + payout Ozon) ──────────────
+with st.spinner("Загружаю налоговую базу из БД…"):
+    wb_base_fns, oz_base_fns = get_tax_bases(sel_keys)
+
+# Прочие каналы: нетто → брутто (ставка 11%)
+other_gross_total = sum(other_gross.values())
+tax_base_total    = wb_base_fns + oz_base_fns + other_gross_total
+
+# Налоги считаются от правильной базы ФНС
+nds, usn, total_tax = calc_taxes(tax_base_total)
+
+# Нетто = поступления на р/с − налоги
+net_after_tax = wb_bank + oz_bank - total_tax
+
+# ─ Таблица ────────────────────────────────────────────────────────────────
+rows = []
+def add(label, val, note=""):
+    rows.append({"Показатель": label, "Сумма, ₽": val, "Примечание": note})
+
+add("", None, "── Поступления на р/с ──────────────────────────")
+add("WB — поступления на р/с",         wb_bank,  "фактические банковские выплаты (из выписки)")
+add("Ozon — поступления на р/с",        oz_bank,  "фактические банковские выплаты (из выписки)")
+for ch in other_channels:
+    if other_net[ch]:
+        add(f"{ch} (нетто Excel)", other_net[ch], f"брутто ≈ {fmt(other_gross[ch])}")
+add("— Итого поступления —",           wb_bank + oz_bank + sum(other_net.values()), "")
+
+add("", None, "")
+add("", None, "── Налогооблагаемая база (ФНС) ─────────────────")
+add("WB — база ФНС",                   wb_base_fns,
+    "retail_price × кол-во (из финотчёта WB)" if wb_base_fns else "нет данных в БД")
+add("Ozon — база ФНС",                 oz_base_fns,
+    "payout из отчёта о реализации Ozon" if oz_base_fns else "нет данных в БД")
+if other_gross_total:
+    add("Прочие каналы (брутто)",      other_gross_total, "нетто / (1 − 11%)")
+add("— Итого налоговая база —",        tax_base_total, "")
+
+add("", None, "")
+add("", None, "── Налоги (от базы ФНС) ────────────────────────")
+add(f"НДС 5% (изнутри)",               nds,       "= база × 5/105")
+add(f"УСН 6%",                         usn,       "= (база − НДС) × 6%")
+add("— Итого налогов —",               total_tax, "")
+
+add("", None, "")
+add("✅ Нетто (р/с WB+Ozon − налоги)", net_after_tax,
+    "фактические поступления WB+Ozon минус налоги от базы ФНС")
+
+cf_df = pd.DataFrame(rows)
+cf_df["Сумма, ₽"] = cf_df["Сумма, ₽"].where(cf_df["Сумма, ₽"].notna(), 0)
+
 st.caption(
-    "Поступления WB/Ozon — реальные банковские выплаты. "
-    "Прочие каналы — суммы нетто из Excel (уже за вычетом 11% налога). "
-    "Налоговая база рассчитывается с учётом всех каналов."
+    "**Поступления на р/с** — реальные банковские выплаты. "
+    "**Налоговая база ФНС** — цена продавца WB (до скидок МП) + payout Ozon (из отчёта комиссионера). "
+    "Налоги рассчитываются от базы ФНС, а не от суммы на р/с."
+)
+st.dataframe(
+    cf_df, use_container_width=True, hide_index=True,
+    column_config={"Сумма, ₽": st.column_config.NumberColumn(format="%,.0f")},
 )
 
-cf = calc_cashflow(sel_keys)
-render_cashflow(cf)
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Поступления WB+Ozon",  fmt(wb_bank + oz_bank))
+col2.metric("База ФНС (WB+Ozon)",   fmt(wb_base_fns + oz_base_fns),
+            help="retail_price WB + payout Ozon — налогооблагаемая база")
+col3.metric("Налоги (НДС + УСН)",   fmt(total_tax))
+col4.metric("Нетто после налогов",  fmt(net_after_tax))
+
+if not DB_URL:
+    st.warning("⚠️ База данных не настроена — налоговая база ФНС недоступна. "
+               "Настройте подключение в разделе ⚙️ Настройки.")
+elif wb_base_fns == 0 and oz_base_fns == 0:
+    st.info("ℹ️ Налоговая база из БД = 0. Возможно, данные за выбранный период ещё не загружены.")
 
 if mode == "Месяц" and sel_keys:
     st.caption(
