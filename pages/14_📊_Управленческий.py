@@ -398,8 +398,9 @@ tax_base_total    = wb_base_fns + oz_base_fns + other_gross_total
 # Налоги считаются от правильной базы ФНС
 nds, usn, total_tax = calc_taxes(tax_base_total)
 
-# Нетто = поступления на р/с − налоги
-net_after_tax = wb_bank + oz_bank - total_tax
+# Нетто = все поступления (WB р/с + Ozon р/с + прочие каналы нетто) − налоги
+total_receipts = wb_bank + oz_bank + sum(other_net.values())
+net_after_tax  = total_receipts - total_tax
 
 # ─ Таблица ────────────────────────────────────────────────────────────────
 rows = []
@@ -412,7 +413,7 @@ add("Ozon — поступления на р/с",        oz_bank,  "фактич
 for ch in other_channels:
     if other_net[ch]:
         add(f"{ch} (нетто Excel)", other_net[ch], f"брутто ≈ {fmt(other_gross[ch])}")
-add("— Итого поступления —",           wb_bank + oz_bank + sum(other_net.values()), "")
+add("— Итого поступления —",           total_receipts, "")
 
 add("", None, "")
 add("", None, "── Налогооблагаемая база (ФНС) ─────────────────")
@@ -431,8 +432,8 @@ add(f"УСН 6%",                         usn,       "= (база − НДС) ×
 add("— Итого налогов —",               total_tax, "")
 
 add("", None, "")
-add("✅ Нетто (р/с WB+Ozon − налоги)", net_after_tax,
-    "фактические поступления WB+Ozon минус налоги от базы ФНС")
+add("✅ Нетто (все поступления − налоги)", net_after_tax,
+    "WB р/с + Ozon р/с + прочие каналы — налоги от базы ФНС")
 
 cf_df = pd.DataFrame(rows)
 cf_df["Сумма, ₽"] = cf_df["Сумма, ₽"].where(cf_df["Сумма, ₽"].notna(), 0)
@@ -448,9 +449,10 @@ st.dataframe(
 )
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Поступления WB+Ozon",  fmt(wb_bank + oz_bank))
-col2.metric("База ФНС (WB+Ozon)",   fmt(wb_base_fns + oz_base_fns),
-            help="retail_price WB + payout Ozon — налогооблагаемая база")
+col1.metric("Все поступления",      fmt(total_receipts),
+            help="WB р/с + Ozon р/с + Консультанты + Летуаль + Золотое Яблоко + Опт крупный")
+col2.metric("База ФНС",             fmt(tax_base_total),
+            help="retail_price WB + payout Ozon + брутто прочих каналов")
 col3.metric("Налоги (НДС + УСН)",   fmt(total_tax))
 col4.metric("Нетто после налогов",  fmt(net_after_tax))
 
