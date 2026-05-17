@@ -1,0 +1,44 @@
+name: Синхронизация продаж WB (только продажи)
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "Год (например 2026)"
+        required: false
+        default: ""
+      month:
+        description: "Месяц 1-12 (пусто = текущий)"
+        required: false
+        default: ""
+      date_from:
+        description: "Дата начала YYYY-MM-DD (переопределяет год/месяц)"
+        required: false
+        default: ""
+
+jobs:
+  sync-sales:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установить Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Установить зависимости
+        run: pip install -r requirements.txt
+
+      - name: Синхронизировать продажи WB
+        env:
+          WB_API_TOKEN: ${{ secrets.WB_API_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SYNC_YEAR:    ${{ github.event.inputs.year }}
+          SYNC_MONTH:   ${{ github.event.inputs.month }}
+          DATE_FROM:    ${{ github.event.inputs.date_from }}
+          PYTHONUNBUFFERED: "1"
+        run: python -u scripts/sync_wb_sales_only.py
