@@ -25,7 +25,7 @@ month = col_m.selectbox(
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎯 План продаж")
 monthly_plan = st.sidebar.number_input(
-    "Выкупов в месяц (WB + Ozon)", min_value=0, value=5500, step=100,
+    "Выкупов в месяц (WB + Ozon)", min_value=0, value=5300, step=100,
 )
 st.sidebar.markdown("---")
 st.sidebar.caption(f"Период: {calendar.month_name[month]} {year}")
