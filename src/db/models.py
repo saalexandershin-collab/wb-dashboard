@@ -290,6 +290,18 @@ class OzonTransaction(Base):
     )
 
 
+class WBApiState(Base):
+    """
+    Глобальное состояние WB API — единый источник истины для всех runner'ов.
+    Хранит unix-timestamp'ы в float для атомарных UPDATE-запросов.
+    """
+    __tablename__ = "wb_api_state"
+
+    key        = Column(String(100), primary_key=True)
+    value      = Column(Float, nullable=False, default=0.0)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 def get_engine(db_url: str):
     if db_url.startswith("postgresql"):
         return create_engine(

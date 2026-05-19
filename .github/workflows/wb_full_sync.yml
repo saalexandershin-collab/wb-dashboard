@@ -1,4 +1,12 @@
-name: WB полная синхронизация (заказы → 5 мин → продажи)
+name: "[DEPRECATED] WB полная синхронизация"
+
+# УСТАРЕЛ — использует 2 запроса к WB API на разных runner'ах.
+# Используй daily_sync.yml (orders) + wb_finances_sync.yml (финотчёт).
+# Оставлен только для ручного запуска в экстренных случаях.
+
+concurrency:
+  group: wb-sync
+  cancel-in-progress: false
 
 on:
   workflow_dispatch:
@@ -13,10 +21,10 @@ on:
         default: ""
 
 jobs:
-  sync-orders:
-    name: "1. Заказы WB"
+  sync-orders-only:
+    name: "Заказы WB (1 запрос — продажи убраны)"
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,39 +32,10 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Синхронизировать заказы
         env:
-          WB_API_TOKEN: ${{ secrets.WB_API_TOKEN }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SYNC_YEAR:    ${{ github.event.inputs.year }}
-          SYNC_MONTH:   ${{ github.event.inputs.month }}
+          WB_API_TOKEN:     ${{ secrets.WB_API_TOKEN }}
+          DATABASE_URL:     ${{ secrets.DATABASE_URL }}
+          SYNC_YEAR:        ${{ github.event.inputs.year }}
+          SYNC_MONTH:       ${{ github.event.inputs.month }}
+          SYNC_MODE:        "orders"
           PYTHONUNBUFFERED: "1"
-        run: python -u scripts/sync_wb_orders_only.py
-
-  wait-5min:
-    name: "2. Пауза 5 минут"
-    needs: sync-orders
-    runs-on: ubuntu-latest
-    steps:
-      - name: Ждём 5 минут (лимит WB API)
-        run: |
-          echo "⏱ Пауза 5 минут перед запросом продаж..."
-          sleep 300
-          echo "✅ Продолжаем"
-
-  sync-sales:
-    name: "3. Продажи WB"
-    needs: wait-5min
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.11", cache: "pip" }
-      - run: pip install -r requirements.txt
-      - name: Синхронизировать продажи
-        env:
-          WB_API_TOKEN: ${{ secrets.WB_API_TOKEN }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SYNC_YEAR:    ${{ github.event.inputs.year }}
-          SYNC_MONTH:   ${{ github.event.inputs.month }}
-          PYTHONUNBUFFERED: "1"
-        run: python -u scripts/sync_wb_sales_only.py
+        run: python -u scripts/sync_wb_unified.py
