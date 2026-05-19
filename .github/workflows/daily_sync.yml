@@ -8,8 +8,8 @@ concurrency:
 
 on:
   schedule:
-    # 02:00 МСК = 23:00 UTC (МСК = UTC+3)
-    - cron: "0 23 * * *"
+    # 03:00 МСК = 00:00 UTC
+    - cron: "0 0 * * *"
   workflow_dispatch:
     inputs:
       year:
@@ -21,7 +21,7 @@ on:
         required: false
         default: ""
       mode:
-        description: "Режим: orders | finances"
+        description: "Режим: orders | sales | finances"
         required: false
         default: "orders"
 

@@ -1,13 +1,13 @@
-name: "[DEPRECATED] Синхронизация продаж WB"
-
-# УСТАРЕЛ — продажи теперь покрываются финансовым отчётом (wb_finances_sync.yml).
-# Оставлен для ручного запуска. Перенаправлен на unified script (orders mode).
+name: Выкупы WB (ежедневно)
 
 concurrency:
   group: wb-sync
   cancel-in-progress: false
 
 on:
+  schedule:
+    # 04:00 МСК = 01:00 UTC
+    - cron: "0 1 * * *"
   workflow_dispatch:
     inputs:
       year:
@@ -20,21 +20,21 @@ on:
         default: ""
 
 jobs:
-  sync-orders:
-    name: "Заказы WB (1 запрос)"
+  sync-sales:
+    name: "Выкупы WB (1 запрос)"
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11", cache: "pip" }
       - run: pip install -r requirements.txt
-      - name: Синхронизировать заказы
+      - name: Синхронизировать выкупы
         env:
           WB_API_TOKEN:     ${{ secrets.WB_API_TOKEN }}
           DATABASE_URL:     ${{ secrets.DATABASE_URL }}
           SYNC_YEAR:        ${{ github.event.inputs.year }}
           SYNC_MONTH:       ${{ github.event.inputs.month }}
-          SYNC_MODE:        "orders"
+          SYNC_MODE:        "sales"
           PYTHONUNBUFFERED: "1"
         run: python -u scripts/sync_wb_unified.py

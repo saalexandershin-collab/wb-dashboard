@@ -2,15 +2,16 @@
 Единый скрипт синхронизации WB — ровно ОДИН запрос к API.
 
 Режимы (переменная SYNC_MODE):
-  orders   — только заказы и отмены (быстрая ежедневная синхронизация)
-  finances — только финансовый отчёт (еженедельно)
+  orders   — заказы и отмены        (ежедневно 03:00 МСК)
+  sales    — выкупы (продажи)       (ежедневно 04:00 МСК)
+  finances — финансовый отчёт       (ежедневно 06:00 МСК)
 
 Переменные окружения:
   WB_API_TOKEN  — токен WB Statistics API
   DATABASE_URL  — строка подключения к БД
   SYNC_YEAR     — год (по умолчанию текущий)
   SYNC_MONTH    — месяц 1-12 (по умолчанию текущий)
-  SYNC_MODE     — 'orders' (default) | 'finances'
+  SYNC_MODE     — 'orders' | 'sales' | 'finances'
 
 Защита от параллельных запусков:
   Перед запросом проверяет wb_blocked_until в БД.
@@ -38,8 +39,8 @@ if not WB_TOKEN:
     print("❌ WB_API_TOKEN не задан"); sys.exit(1)
 if not DB_URL:
     print("❌ DATABASE_URL не задан"); sys.exit(1)
-if SYNC_MODE not in ("orders", "finances"):
-    print(f"❌ SYNC_MODE должен быть 'orders' или 'finances', получено: {SYNC_MODE!r}")
+if SYNC_MODE not in ("orders", "sales", "finances"):
+    print(f"❌ SYNC_MODE должен быть 'orders', 'sales' или 'finances', получено: {SYNC_MODE!r}")
     sys.exit(1)
 
 today = date.today()
@@ -124,6 +125,47 @@ if SYNC_MODE == "orders":
     if error_msg:
         sys.exit(1)
     print(f"🎉 Заказов за {month:02d}.{year}: {n_orders}")
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+elif SYNC_MODE == "sales":
+    # ── Выкупы (продажи) ──────────────────────────────────────────────────────
+    print("📥 Запрашиваю выкупы у WB API...")
+    with Session() as session:
+        log = log_repo.create(session, platform="wb", sync_type="sales_unified",
+                              date_from=first_day, date_to=last_day, status="running")
+
+    n_sales   = 0
+    error_msg = None
+    try:
+        raw_sales = client.get_sales(date_from, flag=0, on_progress=progress)
+        print(f"   Получено от API: {len(raw_sales)}")
+
+        raw_filtered = filter_by_month(raw_sales, year, month)
+        print(f"   После фильтра по {month:02d}.{year}: {len(raw_filtered)}")
+
+        sales = parse_sales(raw_filtered)
+        sale_repo = SaleRepository()
+        with Session() as session:
+            n_sales = sale_repo.upsert_many(session, sales)
+        print(f"✅ Сохранено выкупов: {n_sales}")
+
+    except WBApiError as e:
+        error_msg = str(e)
+        print(f"❌ Ошибка WB API: {e}")
+    except Exception as e:
+        error_msg = str(e)
+        print(f"❌ Ошибка: {e}")
+    finally:
+        status = "success" if not error_msg else "error"
+        with Session() as session:
+            log_repo.finish(session, log.id, status,
+                            orders_loaded=0, sales_loaded=n_sales,
+                            error_message=error_msg)
+
+    if error_msg:
+        sys.exit(1)
+    print(f"🎉 Выкупов за {month:02d}.{year}: {n_sales}")
 
 
 # ════════════════════════════════════════════════════════════════════════════════
