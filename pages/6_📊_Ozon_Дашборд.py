@@ -65,7 +65,17 @@ else:
     sold_tx     = pd.DataFrame()
     sold_by_day = pd.Series(0, index=all_days)
 
-redemption = round(qty_sold / qty_orders * 100, 1) if qty_orders else 0.0
+OZON_PLAN = 800  # цель по выкупам в месяц
+
+plan_pct_oz  = qty_sold / OZON_PLAN * 100 if OZON_PLAN else 0
+days_in_month_oz = calendar.monthrange(year, month)[1]
+if not sold_tx.empty:
+    max_day_oz   = int(pd.to_datetime(sold_tx["operation_date"]).dt.day.max() or 1)
+else:
+    max_day_oz   = 1
+daily_rate_oz    = qty_sold / max_day_oz if max_day_oz else 0
+forecast_oz      = round(daily_rate_oz * days_in_month_oz)
+forecast_pct_oz  = forecast_oz / OZON_PLAN * 100 if OZON_PLAN else 0
 
 # ── KPI ───────────────────────────────────────────────────────────────────────
 st.markdown("### Итого за месяц")
@@ -73,7 +83,18 @@ k1, k2, k3, k4 = st.columns(4)
 k1.metric("Заказов",  f"{qty_orders:,}".replace(",", " "))
 k2.metric("Выкупов",  f"{qty_sold:,}".replace(",", " "))
 k3.metric("Отменено", f"{qty_cancelled:,}".replace(",", " "))
-k4.metric("% выкупа", f"{redemption} %")
+color_oz   = "#10B981" if plan_pct_oz >= 100 else ("#F59E0B" if plan_pct_oz >= 70 else "#EF4444")
+delta_sign_oz = "+" if forecast_pct_oz >= 100 else ""
+k4.markdown(
+    f"""
+    <div style="line-height:1.4">
+      <p style="font-size:0.875rem;color:#6B7280;margin:0">План {OZON_PLAN} шт. / {plan_pct_oz:.1f}%</p>
+      <p style="font-size:1.8rem;font-weight:700;color:{color_oz};margin:0">{qty_sold} / {OZON_PLAN}</p>
+      <p style="font-size:0.8rem;color:{color_oz};margin:0">прогноз {forecast_oz} шт. ({delta_sign_oz}{forecast_pct_oz-100:.1f}%)</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 st.caption("Выкупы — по дате фактической доставки покупателю (транзакционная модель Ozon)")
 st.markdown("---")

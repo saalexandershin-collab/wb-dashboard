@@ -121,7 +121,16 @@ c2.metric("Выкупов", f"{total_buyouts:,}".replace(",", " "))
 c3.metric("Отмен", f"{total_cancels:,}".replace(",", " "))
 c4.metric("Возвратов", f"{total_returns:,}".replace(",", " "))
 if plan_pct is not None:
-    c5.metric("% плана", f"{plan_pct:.1f}%", help=f"План: {plan:,} выкупов")
+    c5.markdown(
+        f"""
+        <div style="line-height:1.4">
+          <p style="font-size:0.875rem;color:#6B7280;margin:0">План (выкупов)</p>
+          <p style="font-size:1.8rem;font-weight:700;color:#111827;margin:0">{f"{plan:,}".replace(",", " ")}</p>
+          <p style="font-size:0.875rem;color:#6B7280;margin:0">выполнено {plan_pct:.1f}%</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     color = "#10B981" if forecast_pct >= 100 else "#EF4444"
     delta_sign = "+" if forecast_pct >= 100 else ""
     c6.markdown(
@@ -135,7 +144,7 @@ if plan_pct is not None:
         unsafe_allow_html=True,
     )
 else:
-    c5.metric("% плана", "—")
+    c5.metric("План", "—", help="Добавьте план в SALES_PLAN в коде дашборда")
     c6.metric("Прогноз", "—")
 
 st.markdown("---")
