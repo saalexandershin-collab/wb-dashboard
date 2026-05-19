@@ -98,8 +98,9 @@ TOP_BLOGGERS = {
 with engine.connect() as conn:
     result = conn.execute(text("""
         SELECT supplier_article, subject, nm_id, COUNT(*) as cnt
-        FROM wb_orders
-        WHERE (is_cancel = false OR is_cancel IS NULL)
+        FROM orders
+        WHERE platform = 'wb'
+          AND (is_cancel = false OR is_cancel IS NULL)
         GROUP BY supplier_article, subject, nm_id
         ORDER BY cnt DESC
         LIMIT 100
@@ -117,8 +118,9 @@ with engine.connect() as conn:
             subject,
             nm_id,
             COUNT(*) as orders
-        FROM wb_orders
-        WHERE (is_cancel = false OR is_cancel IS NULL)
+        FROM orders
+        WHERE platform = 'wb'
+          AND (is_cancel = false OR is_cancel IS NULL)
           AND order_date >= '2025-11-01'
         GROUP BY week_start, supplier_article, subject, nm_id
         ORDER BY week_start, orders DESC
