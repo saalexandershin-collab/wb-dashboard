@@ -1,0 +1,17 @@
+name: Blogger Analysis v2 (daily+monthly)
+on:
+  workflow_dispatch:
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: "pip" }
+      - run: pip install sqlalchemy psycopg2-binary
+      - name: Export DB data
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONUNBUFFERED: "1"
+        run: python -u scripts/blogger_analysis_v2.py
