@@ -1,0 +1,25 @@
+name: Clear WB block (one-time)
+on:
+  workflow_dispatch:
+jobs:
+  clear:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install sqlalchemy psycopg2-binary
+      - name: Clear wb_blocked_until
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python3 -c "
+import os, sys
+sys.path.insert(0, '.')
+from sqlalchemy import create_engine, text
+engine = create_engine(os.environ['DATABASE_URL'])
+with engine.begin() as conn:
+    conn.execute(text(\"UPDATE wb_api_state SET value = 0.0 WHERE key = 'wb_blocked_until'\"))
+    conn.execute(text(\"UPDATE wb_api_state SET value = 0.0 WHERE key = 'wb_last_request_at'\"))
+print('Block cleared in production DB')
+"
