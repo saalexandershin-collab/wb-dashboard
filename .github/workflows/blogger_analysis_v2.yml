@@ -14,4 +14,10 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PYTHONUNBUFFERED: "1"
-        run: python -u scripts/blogger_analysis_v2.py
+        run: python -u scripts/blogger_analysis_v2.py > wb_orders_data.json
+      - name: Show record counts
+        run: python3 -c "import json; d=json.load(open('wb_orders_data.json')); print('daily records:', len(d['daily'])); print('monthly records:', len(d['monthly'])); print('sample daily:', d['daily'][:3]); print('sample monthly:', d['monthly'][:10])"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wb-orders-data
+          path: wb_orders_data.json
