@@ -98,9 +98,8 @@ TOP_BLOGGERS = {
 with engine.connect() as conn:
     result = conn.execute(text("""
         SELECT supplier_article, subject, nm_id, COUNT(*) as cnt
-        FROM orders
-        WHERE platform = 'wb'
-          AND (is_cancel = false OR is_cancel IS NULL)
+        FROM wb_orders
+        WHERE (is_cancel = false OR is_cancel IS NULL)
         GROUP BY supplier_article, subject, nm_id
         ORDER BY cnt DESC
         LIMIT 100
@@ -118,9 +117,8 @@ with engine.connect() as conn:
             subject,
             nm_id,
             COUNT(*) as orders
-        FROM orders
-        WHERE platform = 'wb'
-          AND (is_cancel = false OR is_cancel IS NULL)
+        FROM wb_orders
+        WHERE (is_cancel = false OR is_cancel IS NULL)
           AND order_date >= '2025-11-01'
         GROUP BY week_start, supplier_article, subject, nm_id
         ORDER BY week_start, orders DESC
@@ -130,8 +128,23 @@ with engine.connect() as conn:
         row['week_start'] = str(row['week_start'])[:10]
 
 
-# ── Step 2: Classify DB products ─────────────────────────────────────────────
-def classify_product(article, subject):
+# ── Step 2: Classify DB products by nm_id (reliable) ─────────────────────────
+# nm_id mapping verified from DB product list:
+#   221075308 — CH6 SSAG SERUM (main serum, bulk of volume)
+#   245534038 — CH6 Treatment Balsam
+#   245534311 — CH6 Scalp SSAG Shampoo
+#   453244404 — CH6 Set 3in1
+#   414889490, 414903698, 414902144, 418106362,
+#   414869497, 414911621, 414895483, 414898520 — SPF Curacion variants
+NM_CH6 = {221075308, 245534038, 245534311, 453244404, 377583082}
+NM_SPF = {414889490, 414903698, 414902144, 418106362,
+           414869497, 414911621, 414895483, 414898520}
+
+def classify_product(article, subject, nm_id=None):
+    if nm_id and int(nm_id) in NM_CH6:
+        return "CH6"
+    if nm_id and int(nm_id) in NM_SPF:
+        return "SPF"
     a = str(article).lower()
     s = str(subject).lower()
     if any(x in a or x in s for x in ['спф', 'spf', 'curacion']):
@@ -146,7 +159,7 @@ df_sales_raw = pd.DataFrame(weekly_raw) if weekly_raw else pd.DataFrame(
 
 if len(df_sales_raw) > 0:
     df_sales_raw["product"] = df_sales_raw.apply(
-        lambda r: classify_product(r["supplier_article"], r["subject"]), axis=1
+        lambda r: classify_product(r["supplier_article"], r["subject"], r["nm_id"]), axis=1
     )
     weekly_sales = (
         df_sales_raw
@@ -196,7 +209,7 @@ def interpret_r(r):
     return f"{r:+.3f} ({strength} {sign})"
 
 
-def build_corr_table(product_code, lag_weeks=1, start_date="2025-11-01"):
+def build_corr_table(product_code, lag_weeks=0, start_date="2025-11-01"):
     b = df_blogger[df_blogger["product"] == product_code][
         ["week_start", "total_spend", "n_bloggers"]
     ].copy()
@@ -257,7 +270,7 @@ if products_db:
     print(f"  {'nm_id':>12}  {'Orders':>7}  {'Article':<25}  Subject")
     print(f"  {'-'*12}  {'-'*7}  {'-'*25}  {'-'*30}")
     for p in products_db:
-        label = classify_product(p['supplier_article'], p['subject'])
+        label = classify_product(p['supplier_article'], p['subject'], p['nm_id'])
         print(f"  {str(p['nm_id']):>12}  {int(p['cnt']):>7}  {str(p['supplier_article']):<25}  {p['subject']}  [{label}]")
 else:
     print("  WARNING: No products returned from DB.")
@@ -305,7 +318,7 @@ else:
 # ── 5. Correlation analysis ───────────────────────────────────────────────────
 print("\n\n5. CORRELATION ANALYSIS")
 print(SEP2)
-print("  Method: Pearson R  |  Lag: spend week W vs orders week W+1")
+print("  Method: Pearson R  |  NO LAG — orders appear same week as blogger posts")
 print("  Window: Nov 2025 onward for CH6;  Apr 2026 onward for SPF")
 
 for prod_code, prod_label, start_d in [
@@ -325,8 +338,8 @@ for prod_code, prod_label, start_d in [
         nxt = f"{int(row['orders_next_week']):>12}" if not pd.isna(row["orders_next_week"]) else f"{'—':>12}"
         print(f"  {str(row['week_start'])[:10]:>12}  {row['blogger_spend']:>10,.0f}  {int(row['n_bloggers']):>3}  {int(row['orders_same_week']):>10}  {nxt}")
 
-    print(f"\n  Pearson R (same week, no lag):  {interpret_r(r_same)}")
-    print(f"  Pearson R (1-week lag):         {interpret_r(r_lag)}")
+    print(f"\n  Pearson R (same week — основной):  {interpret_r(r_same)}")
+    print(f"  Pearson R (лаг 1 нед — доп.):      {interpret_r(r_lag)}")
 
     # Top 3 by spend
     top3 = table.nlargest(3, "blogger_spend")
@@ -348,7 +361,7 @@ if weekly_raw:
     print(f"  {'Week':>12}  {'nm_id':>12}  {'Orders':>7}  {'Article':<20}  Subject")
     print(f"  {'-'*12}  {'-'*12}  {'-'*7}  {'-'*20}  {'-'*25}")
     for row in weekly_raw:
-        lbl = classify_product(row["supplier_article"], row["subject"])
+        lbl = classify_product(row["supplier_article"], row["subject"], row["nm_id"])
         print(f"  {row['week_start']:>12}  {str(row['nm_id']):>12}  {int(row['orders']):>7}  {str(row['supplier_article']):<20}  {row['subject']}  [{lbl}]")
 else:
     print("  No data.")
