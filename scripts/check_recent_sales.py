@@ -39,7 +39,7 @@ with engine.connect() as conn:
     r3 = conn.execute(text("""
         SELECT
             order_date::date as day,
-            ROUND(AVG(finish_price)::numeric, 0) as avg_price,
+            ROUND(AVG(finished_price)::numeric, 0) as avg_price,
             ROUND(AVG(discount_percent)::numeric, 1) as avg_discount
         FROM orders
         WHERE platform = 'wb'
