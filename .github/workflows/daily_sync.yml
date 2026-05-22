@@ -3,13 +3,10 @@ name: Ежедневная синхронизация WB
 # Concurrency guard: только один запуск за раз, новый НЕ отменяет текущий.
 # Это ключевая защита от двойных запросов к WB API.
 concurrency:
-  group: wb-sync
+  group: wb-orders-sync
   cancel-in-progress: false
 
 on:
-  schedule:
-    # 03:00 МСК = 00:00 UTC
-    - cron: "0 0 * * *"
   workflow_dispatch:
     inputs:
       year:

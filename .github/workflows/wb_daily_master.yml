@@ -1,0 +1,68 @@
+name: WB Ежедневный мастер-синк
+
+# Единая точка запуска: заказы + выкупы + финансы последовательно.
+# Решает проблему задержек GitHub Actions при разных cron-расписаниях.
+
+concurrency:
+  group: wb-master-sync
+  cancel-in-progress: false
+
+on:
+  schedule:
+    # 06:00 МСК = 03:00 UTC — один надёжный запуск вместо трёх
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  sync-orders:
+    name: "1. Заказы WB"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: "pip" }
+      - run: pip install -r requirements.txt
+      - name: Синхронизировать заказы
+        env:
+          WB_API_TOKEN:     ${{ secrets.WB_API_TOKEN }}
+          DATABASE_URL:     ${{ secrets.DATABASE_URL }}
+          SYNC_MODE:        "orders"
+          PYTHONUNBUFFERED: "1"
+        run: python -u scripts/sync_wb_unified.py
+
+  sync-sales:
+    name: "2. Выкупы WB"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: sync-orders
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: "pip" }
+      - run: pip install -r requirements.txt
+      - name: Синхронизировать выкупы
+        env:
+          WB_API_TOKEN:     ${{ secrets.WB_API_TOKEN }}
+          DATABASE_URL:     ${{ secrets.DATABASE_URL }}
+          SYNC_MODE:        "sales"
+          PYTHONUNBUFFERED: "1"
+        run: python -u scripts/sync_wb_unified.py
+
+  sync-finances:
+    name: "3. Финансовый отчёт WB"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: sync-sales
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: "pip" }
+      - run: pip install -r requirements.txt
+      - name: Синхронизировать финансы
+        env:
+          WB_API_TOKEN:     ${{ secrets.WB_API_TOKEN }}
+          DATABASE_URL:     ${{ secrets.DATABASE_URL }}
+          SYNC_MODE:        "finances"
+          PYTHONUNBUFFERED: "1"
+        run: python -u scripts/sync_wb_unified.py

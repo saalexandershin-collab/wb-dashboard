@@ -1,14 +1,10 @@
 name: Финансовый отчёт WB
 
-# Та же concurrency group — никогда не пересекается с daily_sync / orders_quick.
 concurrency:
-  group: wb-sync
+  group: wb-finances-sync
   cancel-in-progress: false
 
 on:
-  schedule:
-    # 06:00 МСК = 03:00 UTC — после заказов (00:00) и выкупов (01:00)
-    - cron: "0 3 * * *"
   workflow_dispatch:
     inputs:
       year:

@@ -1,13 +1,10 @@
 name: Выкупы WB (ежедневно)
 
 concurrency:
-  group: wb-sync
+  group: wb-sales-sync
   cancel-in-progress: false
 
 on:
-  schedule:
-    # 04:00 МСК = 01:00 UTC
-    - cron: "0 1 * * *"
   workflow_dispatch:
     inputs:
       year:
