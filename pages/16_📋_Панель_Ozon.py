@@ -152,7 +152,7 @@ def agg_op(df: pd.DataFrame, op_name: str) -> float:
 def calc_month_metrics(tx: pd.DataFrame, po: pd.DataFrame):
     """Считает все метрики за месяц из транзакций и постингов."""
     # Из транзакций (по operation_date — правильная дата для налогового учёта)
-    payout     = agg_op(tx, OP_INCOME)                  # начислено от Ozon
+    delivery   = agg_op(tx, OP_INCOME)                  # «Доставка покупателю» — зачисления за выкупы
     returns    = abs(agg_op(tx, OP_RETURNS))             # возврат денег покупателям
     ret_log    = abs(agg_op(tx, OP_RETURN_LOG))          # логистика возвратов
     acquiring  = abs(agg_op(tx, OP_ACQUIRING))
@@ -165,6 +165,8 @@ def calc_month_metrics(tx: pd.DataFrame, po: pd.DataFrame):
                   OP_STORAGE, OP_ADS_CLICK, OP_ADS_ORDER, OP_CROSSDOCK, OP_LOSS_OZON}
     other_neg  = abs(tx[~tx["operation_type_name"].isin(known_ops) & (tx["amount"] < 0)]["amount"].sum())
     total_fees = ret_log + acquiring + storage + ads + crossdock + other_neg
+    # Чистый payout = сумма ВСЕХ транзакций (аналог ppvz_for_pay у WB)
+    payout     = float(tx["amount"].sum()) if not tx.empty else 0.0
 
     # Выручка (реализационная цена) из постингов (по дате заказа)
     delivered  = po[~po["is_cancelled"]]
@@ -177,7 +179,7 @@ def calc_month_metrics(tx: pd.DataFrame, po: pd.DataFrame):
     tax_base   = revenue - returns
 
     return dict(
-        payout=payout, revenue=revenue, returns=returns,
+        payout=payout, delivery=delivery, revenue=revenue, returns=returns,
         tax_base=tax_base, sold_qty=sold_qty, cancel_qty=cancel_qty,
         ret_log=ret_log, acquiring=acquiring, storage=storage,
         ads=ads, crossdock=crossdock, ozon_loss=ozon_loss,
@@ -233,9 +235,12 @@ with tab_month:
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Продано, шт.",          f"{m['sold_qty']:,}".replace(",", " "))
     c2.metric("Отменено / возвраты",   f"{m['cancel_qty']:,}".replace(",", " "))
-    c3.metric("Выручка (реализация)",  f"{m['revenue']:,.0f} ₽".replace(",", " "))
-    c4.metric("Начислено Ozon",        f"{m['payout']:,.0f} ₽".replace(",", " "))
-    c5.metric("Налоговая база",        f"{m['tax_base']:,.0f} ₽".replace(",", " "))
+    c3.metric("Выручка (реализация)",  f"{m['revenue']:,.0f} ₽".replace(",", " "),
+              help="Цена реализации покупателю (price × qty) — налоговая база до вычета возвратов")
+    c4.metric("Чистый payout Ozon",    f"{m['payout']:,.0f} ₽".replace(",", " "),
+              help="Сумма всех транзакций: доставка покупателю − эквайринг − логистика − хранение − прочее. Это деньги, которые Ozon перечисляет на ваш счёт.")
+    c5.metric("Налоговая база",        f"{m['tax_base']:,.0f} ₽".replace(",", " "),
+              help="Выручка (реализация) − возвраты покупателям")
     c6.metric(f"Налог УСН {tax_rate*100:.0f}%", f"{tax_amount:,.0f} ₽".replace(",", " "))
 
     st.markdown("---")
@@ -320,9 +325,10 @@ with tab_month:
     d6.metric("Кросс-докинг / прочее", f"{(m['crossdock'] + m['other_neg']):,.0f} ₽".replace(",", " "))
 
     st.caption(
-        f"Всего удержано Ozon: **{m['total_fees']:,.0f} ₽** · "
-        f"Компенсация от Ozon (потери): **{m['ozon_loss']:,.0f} ₽** · "
-        f"Чистый payout: **{m['payout']:,.0f} ₽**".replace(",", " ")
+        f"Доставка покупателю (зачисления): **{m['delivery']:,.0f} ₽** · "
+        f"Все удержания: **−{m['total_fees']:,.0f} ₽** · "
+        f"Компенсации от Ozon: **+{m['ozon_loss']:,.0f} ₽** · "
+        f"**Чистый payout на р/с: {m['payout']:,.0f} ₽**".replace(",", " ")
     )
 
     # Детальная таблица по типам операций
@@ -379,7 +385,7 @@ with tab_month:
 
     with col_r:
         fig = go.Figure(go.Pie(
-            labels=["Начислено (payout)", "Логистика возвратов",
+            labels=["Чистый payout", "Логистика возвратов",
                     "Эквайринг", "Хранение", "Реклама", "Кросс-докинг/прочее"],
             values=[
                 max(m["payout"], 0), m["ret_log"], m["acquiring"],
@@ -432,7 +438,7 @@ with tab_year:
         "Продано, шт.":       monthly["sold_qty"],
         "Отменено, шт.":      monthly["cancel_qty"],
         "Выручка, ₽":         monthly["revenue"].round(0).astype(int),
-        "Начислено Ozon, ₽":  monthly["payout"].round(0).astype(int),
+        "Чистый payout, ₽":   monthly["payout"].round(0).astype(int),
         "Эквайринг, ₽":       monthly["acquiring"].round(0).astype(int),
         "Логист. возвр., ₽":  monthly["ret_log"].round(0).astype(int),
         "Хранение, ₽":        monthly["storage"].round(0).astype(int),
@@ -446,7 +452,7 @@ with tab_year:
         "Продано, шт.":       int(monthly["sold_qty"].sum()),
         "Отменено, шт.":      int(monthly["cancel_qty"].sum()),
         "Выручка, ₽":         int(monthly["revenue"].sum()),
-        "Начислено Ozon, ₽":  int(monthly["payout"].sum()),
+        "Чистый payout, ₽":   int(monthly["payout"].sum()),
         "Эквайринг, ₽":       int(monthly["acquiring"].sum()),
         "Логист. возвр., ₽":  int(monthly["ret_log"].sum()),
         "Хранение, ₽":        int(monthly["storage"].sum()),
@@ -460,7 +466,7 @@ with tab_year:
 
     col_cfg = {
         "Выручка, ₽":         st.column_config.NumberColumn(format="%d ₽"),
-        "Начислено Ozon, ₽":  st.column_config.NumberColumn(format="%d ₽"),
+        "Чистый payout, ₽":   st.column_config.NumberColumn(format="%d ₽"),
         "Эквайринг, ₽":       st.column_config.NumberColumn(format="%d ₽"),
         "Логист. возвр., ₽":  st.column_config.NumberColumn(format="%d ₽"),
         "Хранение, ₽":        st.column_config.NumberColumn(format="%d ₽"),
@@ -487,7 +493,7 @@ with tab_year:
     fig.add_bar(x=monthly["month_name"], y=monthly["revenue"],
                 name="Выручка", marker_color="#3b82f6")
     fig.add_bar(x=monthly["month_name"], y=monthly["payout"],
-                name="Начислено Ozon", marker_color="#22c55e")
+                name="Чистый payout", marker_color="#22c55e")
     fig.add_bar(x=monthly["month_name"], y=monthly["tax_base"],
                 name="Налоговая база", marker_color="#f59e0b")
     fig.update_layout(
@@ -568,7 +574,8 @@ with tab_year:
     y1, y2, y3, y4, y5 = st.columns(5)
     y1.metric("Продано, шт.",      f"{int(monthly['sold_qty'].sum()):,}".replace(",", " "))
     y2.metric("Выручка",           f"{int(monthly['revenue'].sum()):,} ₽".replace(",", " "))
-    y3.metric("Начислено Ozon",    f"{int(monthly['payout'].sum()):,} ₽".replace(",", " "))
+    y3.metric("Чистый payout",     f"{int(monthly['payout'].sum()):,} ₽".replace(",", " "),
+              help="Сумма всех транзакций Ozon — то, что реально приходит на расчётный счёт")
     y4.metric("Налоговая база",    f"{int(monthly['tax_base'].sum()):,} ₽".replace(",", " "))
     y5.metric(f"Налог УСН {tax_rate*100:.0f}%",
               f"{int(monthly['tax_amount'].sum()):,} ₽".replace(",", " "))
