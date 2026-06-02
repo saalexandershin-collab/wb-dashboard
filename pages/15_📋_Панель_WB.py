@@ -53,8 +53,8 @@ def load_month(db_url: str, year: int, month: int) -> pd.DataFrame:
                 acquiring_fee
             FROM financial_reports
             WHERE platform = 'wb'
-              AND EXTRACT(YEAR  FROM date_from) = :yr
-              AND EXTRACT(MONTH FROM date_from) = :mo
+              AND EXTRACT(YEAR  FROM date_to) = :yr
+              AND EXTRACT(MONTH FROM date_to) = :mo
         """), conn, params={"yr": year, "mo": month})
     return df
 
@@ -65,7 +65,7 @@ def load_year(db_url: str, year: int) -> pd.DataFrame:
     with engine.connect() as conn:
         df = pd.read_sql(text("""
             SELECT
-                EXTRACT(MONTH FROM date_from)::int  AS month,
+                EXTRACT(MONTH FROM date_to)::int  AS month,
                 subject_name,
                 supplier_article,
                 nm_id,
@@ -82,8 +82,8 @@ def load_year(db_url: str, year: int) -> pd.DataFrame:
                 acquiring_fee
             FROM financial_reports
             WHERE platform = 'wb'
-              AND EXTRACT(YEAR FROM date_from) = :yr
-              AND EXTRACT(MONTH FROM date_from) BETWEEN 1 AND 12
+              AND EXTRACT(YEAR FROM date_to) = :yr
+              AND EXTRACT(MONTH FROM date_to) BETWEEN 1 AND 12
         """), conn, params={"yr": year})
     return df
 
