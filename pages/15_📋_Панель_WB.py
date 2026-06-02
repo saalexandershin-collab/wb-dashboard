@@ -1,15 +1,18 @@
 """
 Панель WB — управленческий P&L по месяцам 2026 года.
-Продажи по продуктам + налоговая база + сводка по году.
+Финансовые отчёты WB = основа для налогового и бухгалтерского учёта.
 """
+import io
 import calendar
+from datetime import date
+
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from sqlalchemy import create_engine, text
 
 st.set_page_config(page_title="Панель WB", page_icon="📋", layout="wide")
-st.title("📋 Панель WB — Управленческий отчёт 2026")
+st.title("📋 Панель WB — Бухгалтерский отчёт 2026")
 
 if "database" not in st.secrets:
     st.error("Настройте базу данных в разделе ⚙️ Настройки.")
@@ -24,14 +27,36 @@ MONTHS_RU = {
     7: "Июль",   8: "Август",  9: "Сентябрь",
     10: "Октябрь", 11: "Ноябрь", 12: "Декабрь",
 }
-AVAILABLE_MONTHS = [1, 2, 3, 4, 5]
-TAX_RATE = 0.06   # УСН 6% — можно изменить в боковой панели
+MONTHS_RU_GEN = {
+    1: "января", 2: "февраля", 3: "марта",
+    4: "апреля", 5: "мая",     6: "июня",
+    7: "июля",   8: "августа", 9: "сентября",
+    10: "октября", 11: "ноября", 12: "декабря",
+}
+
+# Доступные месяцы: все прошедшие месяцы 2026 года (не позднее текущего)
+_today = date.today()
+REPORT_YEAR = 2026
+if _today.year == REPORT_YEAR:
+    AVAILABLE_MONTHS = list(range(1, _today.month + 1))
+else:
+    AVAILABLE_MONTHS = list(range(1, 13))  # весь год, если смотрим прошлый
+
+# Последний доступный месяц — по умолчанию
+DEFAULT_MONTH = AVAILABLE_MONTHS[-1]
+
+# Подпись диапазона для итогов, например "январь — май"
+RANGE_LABEL = (
+    f"{MONTHS_RU_GEN[AVAILABLE_MONTHS[0]]} — {MONTHS_RU_GEN[AVAILABLE_MONTHS[-1]]}"
+    if len(AVAILABLE_MONTHS) > 1
+    else MONTHS_RU_GEN[AVAILABLE_MONTHS[0]]
+)
 
 
 # ── Загрузка данных ────────────────────────────────────────────────────────────
 @st.cache_data(ttl=600, show_spinner="Загружаю данные WB…")
 def load_month(db_url: str, year: int, month: int) -> pd.DataFrame:
-    """Финотчёт WB за все недельные периоды, начавшиеся в данном месяце."""
+    """Финотчёт WB за все недельные периоды, закрытые в данном месяце (date_to)."""
     engine = create_engine(db_url)
     with engine.connect() as conn:
         df = pd.read_sql(text("""
@@ -88,13 +113,20 @@ def load_year(db_url: str, year: int) -> pd.DataFrame:
     return df
 
 
+def to_excel_bytes(df: pd.DataFrame) -> bytes:
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False)
+    return buf.getvalue()
+
+
 # ── Боковая панель ─────────────────────────────────────────────────────────────
 st.sidebar.header("Настройки")
 selected_month = st.sidebar.selectbox(
     "Выберите месяц",
     AVAILABLE_MONTHS,
     format_func=lambda m: MONTHS_RU[m],
-    index=3,  # апрель по умолчанию
+    index=len(AVAILABLE_MONTHS) - 1,   # последний доступный месяц
 )
 tax_rate = st.sidebar.number_input(
     "Ставка налога (%)",
@@ -102,13 +134,21 @@ tax_rate = st.sidebar.number_input(
     value=6.0, step=0.5,
 ) / 100
 st.sidebar.markdown("---")
-st.sidebar.caption("Налоговая база = цена реализации (retail_price_withdisc_rub) за минусом возвратов")
+st.sidebar.info(
+    "**Источник:** финансовые отчёты WB\n\n"
+    "Период отчёта определяется по **date_to** "
+    "(дата закрытия еженедельного периода).\n\n"
+    "**Налоговая база** = цена реализации покупателю "
+    "(retail_price_withdisc_rub) за вычетом возвратов. "
+    "ВБ — комиссионер, налог с полной цены продажи, "
+    "а не с payout."
+)
 
 
 # ── Вкладки ────────────────────────────────────────────────────────────────────
 tab_month, tab_year = st.tabs([
-    f"📅 {MONTHS_RU[selected_month]} 2026",
-    "📊 Весь 2026 год",
+    f"📅 {MONTHS_RU[selected_month]} {REPORT_YEAR}",
+    f"📊 Весь {REPORT_YEAR} год",
 ])
 
 
@@ -116,13 +156,12 @@ tab_month, tab_year = st.tabs([
 # ВКЛАДКА 1 — ВЫБРАННЫЙ МЕСЯЦ
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_month:
-    df = load_month(DB_URL, 2026, selected_month)
+    df = load_month(DB_URL, REPORT_YEAR, selected_month)
 
     if df.empty:
-        st.warning(f"Нет данных за {MONTHS_RU[selected_month]} 2026.")
+        st.warning(f"Нет данных за {MONTHS_RU[selected_month]} {REPORT_YEAR}.")
         st.stop()
 
-    # Числовые колонки — приводим к float
     num_cols = ["quantity", "retail_price", "retail_price_withdisc_rub",
                 "ppvz_for_pay", "ppvz_sales_commission",
                 "delivery_rub", "storage_fee", "penalty",
@@ -139,9 +178,9 @@ with tab_month:
 
     revenue    = float((sales_df["retail_price_withdisc_rub"] * sales_df["quantity"].clip(lower=0)).sum())
     rev_return = float((returns_df["retail_price_withdisc_rub"] * returns_df["quantity"].abs()).sum())
-    net_revenue = revenue - rev_return                          # налоговая база
+    net_revenue = revenue - rev_return   # НАЛОГОВАЯ БАЗА
 
-    payout      = float(df["ppvz_for_pay"].sum())               # начислено ВБ (может быть суммой за несколько недель)
+    payout      = float(df["ppvz_for_pay"].sum())
     commission  = float(df["ppvz_sales_commission"].fillna(0).sum())
     logistics   = float(df["delivery_rub"].fillna(0).sum())
     storage     = float(df["storage_fee"].fillna(0).sum())
@@ -152,12 +191,12 @@ with tab_month:
     tax_amount  = net_revenue * tax_rate
 
     # ── KPI-карточки ──────────────────────────────────────────────────────────
-    st.markdown(f"### {MONTHS_RU[selected_month]} 2026 — Сводка")
+    st.markdown(f"### {MONTHS_RU[selected_month]} {REPORT_YEAR} — Сводка")
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Продано, шт.",         f"{sold_qty:,}".replace(",", " "))
     c2.metric("Возвратов, шт.",        f"{return_qty:,}".replace(",", " "))
     c3.metric("Выручка (реализация)",  f"{revenue:,.0f} ₽".replace(",", " "))
-    c4.metric("Начислено ВБ",          f"{payout:,.0f} ₽".replace(",", " "))
+    c4.metric("Начислено WB",          f"{payout:,.0f} ₽".replace(",", " "))
     c5.metric("Налоговая база",        f"{net_revenue:,.0f} ₽".replace(",", " "))
     c6.metric(f"Налог УСН {tax_rate*100:.0f}%", f"{tax_amount:,.0f} ₽".replace(",", " "))
 
@@ -170,26 +209,26 @@ with tab_month:
         sales_df[sales_df["quantity"] > 0]
         .groupby(["subject_name", "supplier_article"], dropna=False)
         .agg(
-            qty         = ("quantity", "sum"),
-            revenue     = ("retail_price_withdisc_rub", lambda x: (x * sales_df.loc[x.index, "quantity"].clip(lower=0)).sum()),
-            wb_payout   = ("ppvz_for_pay", "sum"),
-            commission  = ("ppvz_sales_commission", "sum"),
+            qty        = ("quantity", "sum"),
+            revenue    = ("retail_price_withdisc_rub",
+                          lambda x: (x * sales_df.loc[x.index, "quantity"].clip(lower=0)).sum()),
+            wb_payout  = ("ppvz_for_pay", "sum"),
+            commission = ("ppvz_sales_commission", "sum"),
         )
         .reset_index()
         .sort_values("revenue", ascending=False)
     )
-    # Возвраты по продуктам
     prod_returns = (
         returns_df.groupby(["subject_name", "supplier_article"], dropna=False)
         .agg(ret_qty=("quantity", lambda x: int(abs(x.sum()))))
         .reset_index()
-    ) if not returns_df.empty else pd.DataFrame(columns=["subject_name", "supplier_article", "ret_qty"])
+    ) if not returns_df.empty else pd.DataFrame(
+        columns=["subject_name", "supplier_article", "ret_qty"])
 
     prod = prod_sales.merge(prod_returns, on=["subject_name", "supplier_article"], how="left")
     prod["ret_qty"] = prod["ret_qty"].fillna(0).astype(int)
     prod["net_qty"] = prod["qty"] - prod["ret_qty"]
 
-    # Форматируем для отображения
     prod_display = pd.DataFrame({
         "Продукт":            prod["subject_name"].fillna("—"),
         "Артикул":            prod["supplier_article"].fillna("—"),
@@ -197,8 +236,8 @@ with tab_month:
         "Возвратов, шт.":     prod["ret_qty"],
         "Чистые продажи":     prod["net_qty"],
         "Выручка, ₽":         prod["revenue"].round(0).astype(int),
-        "Начислено ВБ, ₽":    prod["wb_payout"].round(0).astype(int),
-        "Комиссия ВБ, ₽":     prod["commission"].round(0).astype(int),
+        "Начислено WB, ₽":    prod["wb_payout"].round(0).astype(int),
+        "Комиссия WB, ₽":     prod["commission"].round(0).astype(int),
     })
 
     st.dataframe(
@@ -206,47 +245,55 @@ with tab_month:
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Выручка, ₽":      st.column_config.NumberColumn(format="%d ₽"),
-            "Начислено ВБ, ₽": st.column_config.NumberColumn(format="%d ₽"),
-            "Комиссия ВБ, ₽":  st.column_config.NumberColumn(format="%d ₽"),
+            "Выручка, ₽":     st.column_config.NumberColumn(format="%d ₽"),
+            "Начислено WB, ₽": st.column_config.NumberColumn(format="%d ₽"),
+            "Комиссия WB, ₽":  st.column_config.NumberColumn(format="%d ₽"),
         }
     )
-
-    # Итоговая строка под таблицей
     st.caption(
         f"Итого: **{int(prod['qty'].sum()):,} шт.** продано · "
         f"**{int(prod['ret_qty'].sum()):,} шт.** возвращено · "
         f"выручка **{prod['revenue'].sum():,.0f} ₽** · "
-        f"начислено ВБ **{prod['wb_payout'].sum():,.0f} ₽**"
+        f"начислено WB **{prod['wb_payout'].sum():,.0f} ₽**"
         .replace(",", " ")
+    )
+
+    # Кнопка экспорта таблицы продаж
+    st.download_button(
+        label="⬇️ Скачать таблицу продаж (.xlsx)",
+        data=to_excel_bytes(prod_display),
+        file_name=f"wb_продажи_{MONTHS_RU[selected_month].lower()}_{REPORT_YEAR}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
     st.markdown("---")
 
-    # ── РАЗДЕЛ 2: Удержания ВБ ───────────────────────────────────────────────
+    # ── РАЗДЕЛ 2: Удержания WB ───────────────────────────────────────────────
     st.markdown("#### 🔻 Удержания и расходы WB")
     d1, d2, d3, d4, d5, d6 = st.columns(6)
-    d1.metric("Комиссия",   f"{abs(commission):,.0f} ₽".replace(",", " "), delta=None)
-    d2.metric("Логистика",  f"{abs(logistics):,.0f} ₽".replace(",", " "))
-    d3.metric("Хранение",   f"{abs(storage):,.0f} ₽".replace(",", " "))
-    d4.metric("Эквайринг",  f"{abs(acquiring):,.0f} ₽".replace(",", " "))
-    d5.metric("Штрафы",     f"{abs(penalties):,.0f} ₽".replace(",", " "))
-    d6.metric("Доплаты/прочее", f"{add_pay:,.0f} ₽".replace(",", " "))
+    d1.metric("Комиссия",        f"{abs(commission):,.0f} ₽".replace(",", " "))
+    d2.metric("Логистика",       f"{abs(logistics):,.0f} ₽".replace(",", " "))
+    d3.metric("Хранение",        f"{abs(storage):,.0f} ₽".replace(",", " "))
+    d4.metric("Эквайринг",       f"{abs(acquiring):,.0f} ₽".replace(",", " "))
+    d5.metric("Штрафы",          f"{abs(penalties):,.0f} ₽".replace(",", " "))
+    d6.metric("Доплаты/прочее",  f"{add_pay:,.0f} ₽".replace(",", " "))
 
     total_deductions = abs(commission) + abs(logistics) + abs(storage) + abs(acquiring) + abs(penalties)
-    st.caption(f"Всего удержано ВБ: **{total_deductions:,.0f} ₽**  · "
-               f"Чистый payout: **{payout:,.0f} ₽**".replace(",", " "))
+    st.caption(
+        f"Всего удержано WB: **{total_deductions:,.0f} ₽** · "
+        f"Чистый payout: **{payout:,.0f} ₽**".replace(",", " ")
+    )
 
     st.markdown("---")
 
     # ── РАЗДЕЛ 3: Налоговая база ─────────────────────────────────────────────
-    st.markdown("#### 🧾 Налоговая база")
+    st.markdown("#### 🧾 Налоговая база (УСН)")
 
     col_l, col_r = st.columns([1, 1])
     with col_l:
         tax_df = pd.DataFrame({
             "Показатель": [
-                "Цена реализации (продажи)",
+                "Реализовано покупателям (продажи)",
                 "Минус: возвраты покупателей",
                 "= Налоговая база",
                 f"Налог УСН {tax_rate*100:.0f}%",
@@ -259,19 +306,32 @@ with tab_month:
             ]
         })
         st.dataframe(tax_df, use_container_width=True, hide_index=True)
-        st.caption("Налоговая база = цена, по которой ВБ реализовал товар покупателю (retail_price_withdisc_rub), за вычетом возвратов. ВБ — комиссионер, поэтому налог считается от цены продавца, а не от чистого payout.")
+        st.caption(
+            "**Основание:** WB — комиссионер (ст. 251 НК РФ не применяется). "
+            "Налоговая база = цена реализации покупателю "
+            "(retail_price_withdisc_rub) за вычетом возвратов. "
+            "Комиссия, логистика и хранение — расходы, "
+            "они не уменьшают базу при УСН «доходы» 6%."
+        )
+
+        # Экспорт налоговой таблицы
+        st.download_button(
+            label="⬇️ Скачать налоговый расчёт (.xlsx)",
+            data=to_excel_bytes(tax_df),
+            file_name=f"wb_налог_{MONTHS_RU[selected_month].lower()}_{REPORT_YEAR}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
     with col_r:
-        # Круговая диаграмма: из чего состоит выручка
         fig = go.Figure(go.Pie(
-            labels=["Получено (payout)", "Комиссия ВБ", "Логистика", "Хранение", "Эквайринг"],
+            labels=["Получено (payout)", "Комиссия WB", "Логистика", "Хранение", "Эквайринг"],
             values=[max(payout, 0), abs(commission), abs(logistics), abs(storage), abs(acquiring)],
             hole=0.45,
             textinfo="label+percent",
             marker=dict(colors=["#22c55e", "#ef4444", "#f59e0b", "#3b82f6", "#a855f7"]),
         ))
         fig.update_layout(
-            title=f"Распределение выручки {MONTHS_RU[selected_month]}",
+            title=f"Структура выручки — {MONTHS_RU[selected_month]}",
             height=320,
             margin=dict(t=40, b=0, l=0, r=0),
             showlegend=False,
@@ -280,15 +340,15 @@ with tab_month:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ВКЛАДКА 2 — ВЕСЬ 2026 ГОД
+# ВКЛАДКА 2 — ВЕСЬ ГОД
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_year:
-    st.markdown("### Сводный отчёт WB — 2026 год по месяцам")
+    st.markdown(f"### Сводный отчёт WB — {REPORT_YEAR} год по месяцам")
 
-    df_year = load_year(DB_URL, 2026)
+    df_year = load_year(DB_URL, REPORT_YEAR)
 
     if df_year.empty:
-        st.warning("Нет данных за 2026 год.")
+        st.warning(f"Нет данных за {REPORT_YEAR} год.")
         st.stop()
 
     num_cols = ["quantity", "retail_price_withdisc_rub", "ppvz_for_pay",
@@ -300,25 +360,34 @@ with tab_year:
     yr_sales   = df_year[df_year["doc_type_name"] == "Продажа"].copy()
     yr_returns = df_year[df_year["doc_type_name"] == "Возврат"].copy()
 
-    # Месячные агрегаты
-    monthly = yr_sales[yr_sales["month"].isin(AVAILABLE_MONTHS)].groupby("month").agg(
-        sold_qty  = ("quantity", lambda x: int(x.clip(lower=0).sum())),
-        revenue   = ("retail_price_withdisc_rub",
-                     lambda x: float((x * yr_sales.loc[x.index, "quantity"].clip(lower=0)).sum())),
-        payout    = ("ppvz_for_pay", "sum"),
-        commission= ("ppvz_sales_commission", "sum"),
-        logistics = ("delivery_rub", "sum"),
-        storage   = ("storage_fee", "sum"),
-        penalties = ("penalty", "sum"),
-        acquiring = ("acquiring_fee", "sum"),
-        add_pay   = ("additional_payment", "sum"),
-    ).reset_index()
+    monthly = (
+        yr_sales[yr_sales["month"].isin(AVAILABLE_MONTHS)]
+        .groupby("month")
+        .agg(
+            sold_qty   = ("quantity", lambda x: int(x.clip(lower=0).sum())),
+            revenue    = ("retail_price_withdisc_rub",
+                          lambda x: float((x * yr_sales.loc[x.index, "quantity"].clip(lower=0)).sum())),
+            payout     = ("ppvz_for_pay", "sum"),
+            commission = ("ppvz_sales_commission", "sum"),
+            logistics  = ("delivery_rub", "sum"),
+            storage    = ("storage_fee", "sum"),
+            penalties  = ("penalty", "sum"),
+            acquiring  = ("acquiring_fee", "sum"),
+            add_pay    = ("additional_payment", "sum"),
+        )
+        .reset_index()
+    )
 
-    ret_monthly = yr_returns[yr_returns["month"].isin(AVAILABLE_MONTHS)].groupby("month").agg(
-        ret_qty   = ("quantity", lambda x: int(abs(x.sum()))),
-        rev_return= ("retail_price_withdisc_rub",
-                     lambda x: float((x * yr_returns.loc[x.index, "quantity"].abs()).sum())),
-    ).reset_index()
+    ret_monthly = (
+        yr_returns[yr_returns["month"].isin(AVAILABLE_MONTHS)]
+        .groupby("month")
+        .agg(
+            ret_qty    = ("quantity", lambda x: int(abs(x.sum()))),
+            rev_return = ("retail_price_withdisc_rub",
+                          lambda x: float((x * yr_returns.loc[x.index, "quantity"].abs()).sum())),
+        )
+        .reset_index()
+    )
 
     monthly = monthly.merge(ret_monthly, on="month", how="left")
     monthly["ret_qty"]    = monthly["ret_qty"].fillna(0).astype(int)
@@ -328,65 +397,67 @@ with tab_year:
     monthly["month_name"] = monthly["month"].map(MONTHS_RU)
 
     # ── Таблица по месяцам ────────────────────────────────────────────────────
+    tax_col = f"Налог УСН {tax_rate*100:.0f}%, ₽"
     display_year = pd.DataFrame({
-        "Месяц":               monthly["month_name"],
-        "Продано, шт.":        monthly["sold_qty"],
-        "Возвратов, шт.":      monthly["ret_qty"],
-        "Выручка, ₽":          monthly["revenue"].round(0).astype(int),
-        "Начислено ВБ, ₽":     monthly["payout"].round(0).astype(int),
-        "Комиссия ВБ, ₽":      monthly["commission"].abs().round(0).astype(int),
-        "Логистика, ₽":        monthly["logistics"].abs().round(0).astype(int),
-        "Хранение, ₽":         monthly["storage"].abs().round(0).astype(int),
-        "Налоговая база, ₽":   monthly["tax_base"].round(0).astype(int),
-        f"Налог УСН {tax_rate*100:.0f}%, ₽": monthly["tax_amount"].round(0).astype(int),
+        "Месяц":              monthly["month_name"],
+        "Продано, шт.":       monthly["sold_qty"],
+        "Возвратов, шт.":     monthly["ret_qty"],
+        "Выручка, ₽":         monthly["revenue"].round(0).astype(int),
+        "Начислено WB, ₽":    monthly["payout"].round(0).astype(int),
+        "Комиссия WB, ₽":     monthly["commission"].abs().round(0).astype(int),
+        "Логистика, ₽":       monthly["logistics"].abs().round(0).astype(int),
+        "Хранение, ₽":        monthly["storage"].abs().round(0).astype(int),
+        "Налоговая база, ₽":  monthly["tax_base"].round(0).astype(int),
+        tax_col:              monthly["tax_amount"].round(0).astype(int),
     })
 
     # Итоговая строка
     totals = {
-        "Месяц": "ИТОГО",
-        "Продано, шт.":        int(monthly["sold_qty"].sum()),
-        "Возвратов, шт.":      int(monthly["ret_qty"].sum()),
-        "Выручка, ₽":          int(monthly["revenue"].sum()),
-        "Начислено ВБ, ₽":     int(monthly["payout"].sum()),
-        "Комиссия ВБ, ₽":      int(monthly["commission"].abs().sum()),
-        "Логистика, ₽":        int(monthly["logistics"].abs().sum()),
-        "Хранение, ₽":         int(monthly["storage"].abs().sum()),
-        "Налоговая база, ₽":   int(monthly["tax_base"].sum()),
-        f"Налог УСН {tax_rate*100:.0f}%, ₽": int(monthly["tax_amount"].sum()),
+        "Месяц":              "ИТОГО",
+        "Продано, шт.":       int(monthly["sold_qty"].sum()),
+        "Возвратов, шт.":     int(monthly["ret_qty"].sum()),
+        "Выручка, ₽":         int(monthly["revenue"].sum()),
+        "Начислено WB, ₽":    int(monthly["payout"].sum()),
+        "Комиссия WB, ₽":     int(monthly["commission"].abs().sum()),
+        "Логистика, ₽":       int(monthly["logistics"].abs().sum()),
+        "Хранение, ₽":        int(monthly["storage"].abs().sum()),
+        "Налоговая база, ₽":  int(monthly["tax_base"].sum()),
+        tax_col:              int(monthly["tax_amount"].sum()),
     }
-    display_year = pd.concat([display_year, pd.DataFrame([totals])], ignore_index=True)
+    display_year_full = pd.concat(
+        [display_year, pd.DataFrame([totals])], ignore_index=True
+    )
 
-    st.dataframe(
-        display_year,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Выручка, ₽":          st.column_config.NumberColumn(format="%d ₽"),
-            "Начислено ВБ, ₽":     st.column_config.NumberColumn(format="%d ₽"),
-            "Комиссия ВБ, ₽":      st.column_config.NumberColumn(format="%d ₽"),
-            "Логистика, ₽":        st.column_config.NumberColumn(format="%d ₽"),
-            "Хранение, ₽":         st.column_config.NumberColumn(format="%d ₽"),
-            "Налоговая база, ₽":   st.column_config.NumberColumn(format="%d ₽"),
-            f"Налог УСН {tax_rate*100:.0f}%, ₽": st.column_config.NumberColumn(format="%d ₽"),
-        }
+    col_cfg = {
+        "Выручка, ₽":         st.column_config.NumberColumn(format="%d ₽"),
+        "Начислено WB, ₽":    st.column_config.NumberColumn(format="%d ₽"),
+        "Комиссия WB, ₽":     st.column_config.NumberColumn(format="%d ₽"),
+        "Логистика, ₽":       st.column_config.NumberColumn(format="%d ₽"),
+        "Хранение, ₽":        st.column_config.NumberColumn(format="%d ₽"),
+        "Налоговая база, ₽":  st.column_config.NumberColumn(format="%d ₽"),
+        tax_col:              st.column_config.NumberColumn(format="%d ₽"),
+    }
+
+    st.dataframe(display_year_full, use_container_width=True, hide_index=True, column_config=col_cfg)
+
+    # Экспорт сводного отчёта
+    st.download_button(
+        label="⬇️ Скачать сводный отчёт (.xlsx)",
+        data=to_excel_bytes(display_year_full),
+        file_name=f"wb_сводный_{REPORT_YEAR}_{MONTHS_RU_GEN[AVAILABLE_MONTHS[0]]}-{MONTHS_RU_GEN[AVAILABLE_MONTHS[-1]]}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
     st.markdown("---")
 
     # ── Графики ───────────────────────────────────────────────────────────────
     fig = go.Figure()
-    fig.add_bar(
-        x=monthly["month_name"], y=monthly["revenue"],
-        name="Выручка", marker_color="#3b82f6"
-    )
-    fig.add_bar(
-        x=monthly["month_name"], y=monthly["payout"],
-        name="Начислено ВБ", marker_color="#22c55e"
-    )
-    fig.add_bar(
-        x=monthly["month_name"], y=monthly["tax_base"],
-        name="Налоговая база", marker_color="#f59e0b"
-    )
+    fig.add_bar(x=monthly["month_name"], y=monthly["revenue"],
+                name="Выручка", marker_color="#3b82f6")
+    fig.add_bar(x=monthly["month_name"], y=monthly["payout"],
+                name="Начислено WB", marker_color="#22c55e")
+    fig.add_bar(x=monthly["month_name"], y=monthly["tax_base"],
+                name="Налоговая база", marker_color="#f59e0b")
     fig.update_layout(
         barmode="group",
         title="Выручка / Начислено / Налоговая база по месяцам",
@@ -397,7 +468,6 @@ with tab_year:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # График продаж в штуках
     fig2 = go.Figure()
     fig2.add_scatter(
         x=monthly["month_name"], y=monthly["sold_qty"],
@@ -427,7 +497,7 @@ with tab_year:
     st.markdown("---")
 
     # ── Продажи по продуктам за год ───────────────────────────────────────────
-    st.markdown("#### 📦 Продажи по продуктам за 2026 год")
+    st.markdown(f"#### 📦 Продажи по продуктам за {REPORT_YEAR} год")
 
     yr_prod = (
         yr_sales[yr_sales["quantity"] > 0]
@@ -442,28 +512,38 @@ with tab_year:
         .sort_values("revenue", ascending=False)
     )
 
+    yr_prod_display = pd.DataFrame({
+        "Продукт":          yr_prod["subject_name"].fillna("—"),
+        "Артикул":          yr_prod["supplier_article"].fillna("—"),
+        "Продано, шт.":     yr_prod["sold_qty"].astype(int),
+        "Выручка, ₽":       yr_prod["revenue"].round(0).astype(int),
+        "Начислено WB, ₽":  yr_prod["wb_payout"].round(0).astype(int),
+    })
+
     st.dataframe(
-        pd.DataFrame({
-            "Продукт":          yr_prod["subject_name"].fillna("—"),
-            "Артикул":          yr_prod["supplier_article"].fillna("—"),
-            "Продано, шт.":     yr_prod["sold_qty"].astype(int),
-            "Выручка, ₽":       yr_prod["revenue"].round(0).astype(int),
-            "Начислено ВБ, ₽":  yr_prod["wb_payout"].round(0).astype(int),
-        }),
+        yr_prod_display,
         use_container_width=True,
         hide_index=True,
         column_config={
             "Выручка, ₽":      st.column_config.NumberColumn(format="%d ₽"),
-            "Начислено ВБ, ₽": st.column_config.NumberColumn(format="%d ₽"),
+            "Начислено WB, ₽": st.column_config.NumberColumn(format="%d ₽"),
         }
+    )
+
+    st.download_button(
+        label="⬇️ Скачать по продуктам (.xlsx)",
+        data=to_excel_bytes(yr_prod_display),
+        file_name=f"wb_продукты_{REPORT_YEAR}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
     # ── Итоговые KPI года ─────────────────────────────────────────────────────
     st.markdown("---")
-    st.markdown("#### 🏁 Итого 2026 (январь — май)")
+    st.markdown(f"#### 🏁 Итого {REPORT_YEAR} ({RANGE_LABEL})")
     y1, y2, y3, y4, y5 = st.columns(5)
-    y1.metric("Продано, шт.",       f"{int(monthly['sold_qty'].sum()):,}".replace(",", " "))
-    y2.metric("Выручка",            f"{int(monthly['revenue'].sum()):,} ₽".replace(",", " "))
-    y3.metric("Начислено ВБ",       f"{int(monthly['payout'].sum()):,} ₽".replace(",", " "))
-    y4.metric("Налоговая база",     f"{int(monthly['tax_base'].sum()):,} ₽".replace(",", " "))
-    y5.metric(f"Налог УСН {tax_rate*100:.0f}%", f"{int(monthly['tax_amount'].sum()):,} ₽".replace(",", " "))
+    y1.metric("Продано, шт.",      f"{int(monthly['sold_qty'].sum()):,}".replace(",", " "))
+    y2.metric("Выручка",           f"{int(monthly['revenue'].sum()):,} ₽".replace(",", " "))
+    y3.metric("Начислено WB",      f"{int(monthly['payout'].sum()):,} ₽".replace(",", " "))
+    y4.metric("Налоговая база",    f"{int(monthly['tax_base'].sum()):,} ₽".replace(",", " "))
+    y5.metric(f"Налог УСН {tax_rate*100:.0f}%",
+              f"{int(monthly['tax_amount'].sum()):,} ₽".replace(",", " "))
