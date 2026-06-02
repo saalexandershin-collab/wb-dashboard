@@ -38,6 +38,7 @@ if auth_status:
         st.Page("pages/12_🧾_Налоги.py",           title="Налоги (год)",        icon="🧾"),
         st.Page("pages/13_🔍_Сверка.py",           title="Сверка / Дебиторка", icon="🔍"),
         st.Page("pages/14_📊_Управленческий.py",   title="Управленческий",     icon="📊"),
+        st.Page("pages/15_📋_Панель_WB.py",        title="Панель WB",           icon="📋"),
         st.Page("pages/3_⚙️_Настройки.py",         title="Настройки",           icon="⚙️"),
     ]
 
