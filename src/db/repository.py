@@ -230,6 +230,9 @@ class FinancialReportRepository:
                 FinancialReport.date_from <= df_max,
             )
         )
+        # Supabase connection pooler сбрасывает session-level настройки,
+        # поэтому ставим таймаут явно перед тяжёлым запросом
+        session.execute(text("SET LOCAL statement_timeout = 0"))
         rows = session.execute(stmt).scalars().all()
         if not rows:
             return pd.DataFrame()
