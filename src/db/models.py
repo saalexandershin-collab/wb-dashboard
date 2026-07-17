@@ -328,15 +328,4 @@ def init_db(db_url: str):
             Base.metadata.create_all(engine)
         except Exception:
             pass
-    # Убедиться что критические индексы существуют (create_all не добавляет
-    # индексы к уже существующим таблицам)
-    try:
-        with engine.connect() as conn:
-            conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS ix_fin_platform_date_from "
-                "ON financial_reports(platform, date_from)"
-            ))
-            conn.commit()
-    except Exception:
-        pass
     return engine
