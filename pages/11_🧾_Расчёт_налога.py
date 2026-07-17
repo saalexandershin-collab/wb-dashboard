@@ -50,8 +50,19 @@ st.sidebar.caption(f"Период: {calendar.month_name[month]} {year}")
 
 
 # ── Загрузка данных ───────────────────────────────────────────────────────────
-df_wb = load_wb_financial(DB_URL, year, month)
-df_oz = load_ozon_postings(DB_URL, year, month)
+try:
+    df_wb = load_wb_financial(DB_URL, year, month)
+except Exception as e:
+    err_text = str(e).replace(DB_URL, "***")
+    st.error(f"Ошибка загрузки WB финансов: `{type(e).__name__}: {err_text[:500]}`")
+    st.stop()
+
+try:
+    df_oz = load_ozon_postings(DB_URL, year, month)
+except Exception as e:
+    err_text = str(e).replace(DB_URL, "***")
+    st.error(f"Ошибка загрузки Ozon постингов: `{type(e).__name__}: {err_text[:500]}`")
+    st.stop()
 
 
 # ── WB: оборот и база ─────────────────────────────────────────────────────────
