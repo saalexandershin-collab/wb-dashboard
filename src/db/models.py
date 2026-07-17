@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, String, Integer, BigInteger, Float, Boolean,
-    DateTime, Date, Text, UniqueConstraint, Index, create_engine
+    DateTime, Date, Text, UniqueConstraint, Index, create_engine, text
 )
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from datetime import datetime
@@ -184,6 +184,7 @@ class FinancialReport(Base):
     __table_args__ = (
         UniqueConstraint("platform", "rrd_id", name="uq_fin_platform_rrd_id"),
         Index("ix_fin_platform_create_dt", "platform", "create_dt"),
+        Index("ix_fin_platform_date_from", "platform", "date_from"),
     )
 
 
@@ -327,4 +328,15 @@ def init_db(db_url: str):
             Base.metadata.create_all(engine)
         except Exception:
             pass
+    # Убедиться что критические индексы существуют (create_all не добавляет
+    # индексы к уже существующим таблицам)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_fin_platform_date_from "
+                "ON financial_reports(platform, date_from)"
+            ))
+            conn.commit()
+    except Exception:
+        pass
     return engine
