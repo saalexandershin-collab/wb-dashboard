@@ -14,6 +14,15 @@ on:
     - cron: "0 6 * * *"   # 09:00 МСК (резервный, если первый задержался)
     - cron: "0 10 * * *"  # 13:00 МСК (страховочный)
   workflow_dispatch:
+    inputs:
+      year:
+        description: "Год (пусто = текущий)"
+        required: false
+        default: ""
+      month:
+        description: "Месяц 1-12 (пусто = текущий)"
+        required: false
+        default: ""
 
 jobs:
   sync-orders:
@@ -30,6 +39,8 @@ jobs:
           WB_API_TOKEN:     ${{ secrets.WB_API_TOKEN }}
           DATABASE_URL:     ${{ secrets.DATABASE_URL }}
           SYNC_MODE:        "orders"
+          SYNC_YEAR:        ${{ github.event.inputs.year }}
+          SYNC_MONTH:       ${{ github.event.inputs.month }}
           PYTHONUNBUFFERED: "1"
         run: python -u scripts/sync_wb_unified.py
 
@@ -48,6 +59,8 @@ jobs:
           WB_API_TOKEN:     ${{ secrets.WB_API_TOKEN }}
           DATABASE_URL:     ${{ secrets.DATABASE_URL }}
           SYNC_MODE:        "sales"
+          SYNC_YEAR:        ${{ github.event.inputs.year }}
+          SYNC_MONTH:       ${{ github.event.inputs.month }}
           PYTHONUNBUFFERED: "1"
         run: python -u scripts/sync_wb_unified.py
 
@@ -66,6 +79,8 @@ jobs:
           WB_API_TOKEN:     ${{ secrets.WB_API_TOKEN }}
           DATABASE_URL:     ${{ secrets.DATABASE_URL }}
           SYNC_MODE:        "finances"
+          SYNC_YEAR:        ${{ github.event.inputs.year }}
+          SYNC_MONTH:       ${{ github.event.inputs.month }}
           PYTHONUNBUFFERED: "1"
         run: python -u scripts/sync_wb_unified.py
 

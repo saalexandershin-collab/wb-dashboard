@@ -177,6 +177,10 @@ class WBClient:
                     print(f"🚫 {msg}")
                 raise WBApiError(msg)
 
+            # 204 = отчёт ещё не готов (начало месяца) — не ошибка
+            if resp.status_code == 204:
+                break
+
             if resp.status_code != 200:
                 raise WBApiError(
                     f"Ошибка WB API {resp.status_code}: {resp.text[:300]}"
