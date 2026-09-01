@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import calendar
 from datetime import date
 
-from src.data_loader import load_wb_orders, load_wb_sales, load_ozon_postings, load_ozon_transactions
+from src.data_loader import load_wb_orders, load_wb_sales, load_wb_financial, load_ozon_postings, load_ozon_transactions
 
 st.title("🔀 Сводный отчёт WB + Ozon")
 
@@ -46,6 +46,7 @@ else:
     wb_qty_orders = 0
     wb_actual = pd.DataFrame()
 
+wb_financial_fallback = False
 if not wb_sales.empty:
     wb_sales["sale_date"] = pd.to_datetime(wb_sales["sale_date"])
     wb_sales["day"] = wb_sales["sale_date"].dt.day
@@ -54,7 +55,15 @@ if not wb_sales.empty:
     wb_qty_sold     = len(wb_sold)
     wb_qty_returned = len(wb_returns)
 else:
-    wb_qty_sold = wb_qty_returned = 0
+    # WB Statistics API возвращает данные только за последние ~90 дней.
+    # Для исторических периодов берём количество из финансового отчёта.
+    wb_fin = load_wb_financial(DB_URL, year, month)
+    if not wb_fin.empty:
+        wb_qty_sold     = int(wb_fin[wb_fin["doc_type_name"] == "Продажа"]["quantity"].fillna(0).sum())
+        wb_qty_returned = int(wb_fin[wb_fin["doc_type_name"] == "Возврат"]["quantity"].fillna(0).abs().sum())
+        wb_financial_fallback = True
+    else:
+        wb_qty_sold = wb_qty_returned = 0
     wb_sold = wb_returns = pd.DataFrame()
 
 # ── Агрегаты Ozon ─────────────────────────────────────────────────────────────
@@ -86,7 +95,12 @@ days_in_month = calendar.monthrange(year, month)[1]
 
 last_day_wb  = int(wb_sold["day"].max())    if not wb_sold.empty    else 0
 last_day_oz  = int(oz_sold_tx["day"].max()) if not oz_sold_tx.empty else 0
-days_elapsed = max(last_day_wb, last_day_oz, 1)
+# Для завершённых исторических месяцев используем полную длину месяца
+_is_past_month = (year, month) < (today.year, today.month)
+if _is_past_month and last_day_wb == 0 and last_day_oz == 0:
+    days_elapsed = days_in_month
+else:
+    days_elapsed = max(last_day_wb, last_day_oz, 1)
 
 if monthly_plan > 0 and total_sold > 0:
     daily_rate   = total_sold / days_elapsed
@@ -101,6 +115,13 @@ def fmt(n: int) -> str:
     """Форматирует число с пробелами как разделителями тысяч."""
     return f"{n:,}".replace(",", " ")
 
+
+if wb_financial_fallback:
+    st.info(
+        "Данные о выкупах WB за этот период взяты из **финансового отчёта** "
+        "(WB Statistics API хранит данные только за последние ~90 дней).",
+        icon="ℹ️",
+    )
 
 # ── Блок прогресса плана ─────────────────────────────────────────────────────
 st.markdown("### 🎯 Выполнение плана")
