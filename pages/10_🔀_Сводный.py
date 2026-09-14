@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import calendar
 from datetime import date
 
-from src.data_loader import load_wb_orders, load_wb_sales, load_wb_financial, load_ozon_postings, load_ozon_transactions
+from src.data_loader import load_wb_orders, load_wb_sales, load_ozon_postings, load_ozon_transactions
 
 st.title("🔀 Сводный отчёт WB + Ozon")
 
@@ -55,12 +55,11 @@ if not wb_sales.empty:
     wb_qty_sold     = len(wb_sold)
     wb_qty_returned = len(wb_returns)
 else:
-    # WB Statistics API возвращает данные только за последние ~90 дней.
-    # Для исторических периодов берём количество из финансового отчёта.
-    wb_fin = load_wb_financial(DB_URL, year, month)
-    if not wb_fin.empty:
-        wb_qty_sold     = int(wb_fin[wb_fin["doc_type_name"] == "Продажа"]["quantity"].fillna(0).sum())
-        wb_qty_returned = int(wb_fin[wb_fin["doc_type_name"] == "Возврат"]["quantity"].fillna(0).abs().sum())
+    # WB Statistics API не отдаёт данные старше ~90 дней.
+    # Используем незаотменённые заказы как прокси для выкупов.
+    if not wb_orders.empty:
+        wb_qty_sold     = len(wb_orders[~wb_orders["is_cancel"].fillna(False)])
+        wb_qty_returned = 0
         wb_financial_fallback = True
     else:
         wb_qty_sold = wb_qty_returned = 0
@@ -118,8 +117,9 @@ def fmt(n: int) -> str:
 
 if wb_financial_fallback:
     st.info(
-        "Данные о выкупах WB за этот период взяты из **финансового отчёта** "
-        "(WB Statistics API хранит данные только за последние ~90 дней).",
+        "Выкупы WB за этот период рассчитаны по **незаотменённым заказам** "
+        "(WB Statistics API хранит продажи только за последние ~90 дней). "
+        "Возвраты за исторические периоды не отображаются.",
         icon="ℹ️",
     )
 
