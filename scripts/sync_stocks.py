@@ -33,6 +33,10 @@ print(f"📦 Загружаю остатки с WB (dateFrom={date_from.strftime
 try:
     raw = client.get_stocks(date_from, on_progress=print)
 except WBApiError as e:
+    msg = str(e)
+    if "404" in msg or "deprecated" in msg.lower():
+        print(f"⚠️  Endpoint остатков WB устарён (404) — пропускаем: {e}")
+        sys.exit(0)
     print(f"❌ Ошибка API: {e}")
     sys.exit(1)
 
