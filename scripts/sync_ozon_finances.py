@@ -54,8 +54,18 @@ with Session() as session:
             if "404" in str(api_err):
                 print(f"  [v3] endpoint удалён ({api_err}), переключаюсь на cash-flow-statement...")
                 raw = client.get_cash_flow_statement(date_from, date_to, on_progress=progress)
+                # Отладка: выводим структуру первого периода для диагностики
+                if raw:
+                    import json as _json
+                    first = raw[0]
+                    print(f"  [cfs-debug] Ключи первого периода: {list(first.keys())}")
+                    print(f"  [cfs-debug] period={first.get('period')}, invoice_transfer={first.get('invoice_transfer')}, orders_amount={first.get('orders_amount')}")
+                    details = first.get("details") or {}
+                    print(f"  [cfs-debug] details ключи: {list(details.keys())[:10]}, invoice_transfer в details: {details.get('invoice_transfer')}")
                 rows = parse_cash_flow_statement(raw)
                 print(f"  [cfs] Получено {len(rows)} периодов из cash-flow-statement")
+                for r in rows:
+                    print(f"    period {r['operation_date'].date()}→{r.get('period_to', '?')}: id={r['operation_id']}, amount={r['amount']:.2f}, orders={r['accruals_for_sale']:.2f}")
             else:
                 raise
 

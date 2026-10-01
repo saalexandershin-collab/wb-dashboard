@@ -252,19 +252,32 @@ def parse_cash_flow_statement(raw: list[dict]) -> list[dict]:
         period = period_data.get("period") or {}
         begin = _parse_dt(period.get("begin"))
         end   = _parse_dt(period.get("end"))
-        period_id = str(period.get("id") or "")
+
+        # period_id может быть на верхнем уровне или внутри period
+        period_id = (
+            str(period_data.get("cash_flow_id") or "")
+            or str(period_data.get("period_id") or "")
+            or str(period.get("id") or "")
+        )
 
         details = period_data.get("details") or {}
-        # invoice_transfer = к выплате за период
-        invoice_transfer = _float(details.get("invoice_transfer")) or 0.0
+        # invoice_transfer = к выплате за период; может быть на верхнем уровне или в details
+        invoice_transfer = (
+            _float(period_data.get("invoice_transfer"))
+            or _float(details.get("invoice_transfer"))
+            or 0.0
+        )
         # orders_amount = выручка от заказов
         orders_amount = _float(period_data.get("orders_amount")) or 0.0
 
         if begin is None:
             continue
 
+        # Уникальный ключ: период_id или дата начала — чтобы не перезаписывать разные периоды
+        unique_id = period_id if period_id else begin.strftime("%Y%m%d")
+
         rows.append({
-            "operation_id":        f"cfs_{period_id}",
+            "operation_id":        f"cfs_{unique_id}",
             "operation_date":      begin,
             "operation_type":      "CashFlowStatement",
             "operation_type_name": "Финансовый отчёт (выплата за период)",
