@@ -14,7 +14,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from src.api.ozon_client import OzonClient, OzonApiError, parse_transactions
+from src.api.ozon_client import OzonClient, OzonApiError, parse_transactions, parse_cash_flow_statement
 from src.db.models import init_db, get_session_factory
 from src.db.repository import OzonTransactionRepository, SyncLogRepository
 
@@ -45,9 +45,19 @@ with Session() as session:
         def progress(msg):
             print(" ", msg)
 
-        raw = client.get_transactions(date_from, date_to, on_progress=progress)
-        rows = parse_transactions(raw)
-        print(f"  Получено {len(rows)} транзакций")
+        # Пробуем v3 endpoint; при 404 (удалён) переходим на cash-flow-statement
+        try:
+            raw = client.get_transactions(date_from, date_to, on_progress=progress)
+            rows = parse_transactions(raw)
+            print(f"  [v3] Получено {len(rows)} транзакций")
+        except OzonApiError as api_err:
+            if "404" in str(api_err):
+                print(f"  [v3] endpoint удалён ({api_err}), переключаюсь на cash-flow-statement...")
+                raw = client.get_cash_flow_statement(date_from, date_to, on_progress=progress)
+                rows = parse_cash_flow_statement(raw)
+                print(f"  [cfs] Получено {len(rows)} периодов из cash-flow-statement")
+            else:
+                raise
 
         saved = repo.upsert_many(session, rows)
         print(f"  Сохранено {saved} строк в БД")

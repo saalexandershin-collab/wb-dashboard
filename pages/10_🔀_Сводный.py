@@ -80,10 +80,20 @@ if not oz_txs.empty:
     oz_txs["operation_date"] = pd.to_datetime(oz_txs["operation_date"])
     oz_txs["day"] = oz_txs["operation_date"].dt.day
     oz_sold_tx  = oz_txs[oz_txs["operation_type"] == "OperationAgentDeliveredToCustomer"]
-    oz_qty_sold = len(oz_sold_tx)
+    # Проверяем свежесть: для завершённых месяцев транзакции должны покрывать весь месяц
+    _days_in_month = calendar.monthrange(year, month)[1]
+    _is_past_month = (year, month) < (today.year, today.month)
+    _max_tx_day    = int(oz_txs["day"].max()) if not oz_txs.empty else 0
+    _tx_stale      = _is_past_month and _max_tx_day < (_days_in_month - 7)
+    if _tx_stale:
+        # Транзакции устарели — берём незаотменённые заказы как прокси
+        oz_sold_tx  = pd.DataFrame()
+        oz_qty_sold = int(oz_orders["quantity"].sum()) if not oz_orders.empty else 0
+    else:
+        oz_qty_sold = len(oz_sold_tx)
 else:
     oz_sold_tx  = pd.DataFrame()
-    oz_qty_sold = 0
+    oz_qty_sold = int(oz_orders["quantity"].sum()) if not oz_orders.empty else 0
 
 total_orders  = wb_qty_orders + oz_qty_orders
 total_sold    = wb_qty_sold + oz_qty_sold

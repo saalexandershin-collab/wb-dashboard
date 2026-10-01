@@ -110,7 +110,7 @@ class OzonClient:
             offset += limit
         return results
 
-    # ── Финансовые транзакции ─────────────────────────────────────────────────
+    # ── Финансовые транзакции (v3 — устарел с сентября 2026) ─────────────────
     def get_transactions(self, date_from: datetime, date_to: datetime,
                          on_progress=None) -> list[dict]:
         results = []
@@ -137,6 +137,35 @@ class OzonClient:
             if on_progress:
                 on_progress(f"  Transactions page={page}: получено {len(rows)} (итого {len(results)})")
             if len(rows) < page_size:
+                break
+            page += 1
+        return results
+
+    # ── Финансовый отчёт (cash-flow-statement, замена транзакций) ────────────
+    def get_cash_flow_statement(self, date_from: datetime, date_to: datetime,
+                                on_progress=None) -> list[dict]:
+        """Возвращает полу-месячные финансовые отчёты за диапазон дат."""
+        results = []
+        page = 1
+        page_size = 100
+        while True:
+            body = {
+                "date": {
+                    "from": date_from.strftime("%Y-%m-%dT00:00:00.000Z"),
+                    "to":   date_to.strftime("%Y-%m-%dT23:59:59.000Z"),
+                },
+                "with_details": True,
+                "page": page,
+                "page_size": page_size,
+            }
+            data = self._post("/v1/finance/cash-flow-statement/list", body, on_progress)
+            result = data.get("result", {})
+            rows = result.get("cash_flows", [])
+            results.extend(rows)
+            if on_progress:
+                on_progress(f"  CashFlow page={page}: получено {len(rows)} периодов")
+            page_count = result.get("page_count", 1)
+            if page >= page_count or len(rows) == 0:
                 break
             page += 1
         return results
@@ -208,6 +237,50 @@ def parse_stocks(raw: list[dict]) -> list[dict]:
             "free_to_sell_amount": _int(r.get("free_to_sell_amount")) or 0,
             "promised_amount": _int(r.get("promised_amount")) or 0,
             "reserved_amount": _int(r.get("reserved_amount")) or 0,
+        })
+    return rows
+
+
+def parse_cash_flow_statement(raw: list[dict]) -> list[dict]:
+    """
+    Преобразует полу-месячные отчёты cash-flow-statement в строки, совместимые
+    с таблицей ozon_transactions. Используется как замена /v3/finance/transaction/list.
+    Создаёт одну сводную строку на каждый период с operation_type='CashFlowStatement'.
+    """
+    rows = []
+    for period_data in raw:
+        period = period_data.get("period") or {}
+        begin = _parse_dt(period.get("begin"))
+        end   = _parse_dt(period.get("end"))
+        period_id = str(period.get("id") or "")
+
+        details = period_data.get("details") or {}
+        # invoice_transfer = к выплате за период
+        invoice_transfer = _float(details.get("invoice_transfer")) or 0.0
+        # orders_amount = выручка от заказов
+        orders_amount = _float(period_data.get("orders_amount")) or 0.0
+
+        if begin is None:
+            continue
+
+        rows.append({
+            "operation_id":        f"cfs_{period_id}",
+            "operation_date":      begin,
+            "operation_type":      "CashFlowStatement",
+            "operation_type_name": "Финансовый отчёт (выплата за период)",
+            "posting_number":      "",
+            "order_id":            "",
+            "sku":                 None,
+            "offer_id":            "",
+            "product_name":        "",
+            "quantity":            0,
+            "amount":              invoice_transfer,
+            "accruals_for_sale":   orders_amount,
+            "sale_commission":     0.0,
+            "delivery_charge":     0.0,
+            "return_delivery_charge": 0.0,
+            "period_from":         begin,
+            "period_to":           end,
         })
     return rows
 
