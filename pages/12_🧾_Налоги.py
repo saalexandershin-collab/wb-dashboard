@@ -99,10 +99,16 @@ def calc_ozon_month(year: int, month: int) -> dict:
             p["qty"] = p["quantity"].fillna(0).clip(lower=0)
             base = float((p["price"].fillna(0) * p["qty"]).sum())
 
-    # К перечислению = сумма amount по всем транзакциям месяца
+    # К перечислению = нетто выплаты за месяц.
+    # Если есть CashFlowStatement строки — используем только их (покрывают весь месяц).
+    # Иначе — суммируем старые v3 транзакции (до сентября 2026).
     payout = 0.0
     if not tx.empty:
-        payout = float(tx["amount"].fillna(0).sum())
+        cfs = tx[tx["operation_type"] == "CashFlowStatement"]
+        if not cfs.empty:
+            payout = float(cfs["amount"].fillna(0).sum())
+        else:
+            payout = float(tx["amount"].fillna(0).sum())
 
     has_data = (not postings.empty) or (not tx.empty)
     return dict(base=float(base), payout=float(payout), has_data=has_data)
