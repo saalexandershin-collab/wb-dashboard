@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import calendar
 from datetime import date
 
-from src.data_loader import load_wb_orders, load_wb_sales, load_ozon_postings, load_ozon_transactions
+from src.data_loader import load_wb_orders, load_wb_sales, load_ozon_postings
 
 st.title("🔀 Сводный отчёт WB + Ozon")
 
@@ -34,7 +34,6 @@ st.sidebar.caption(f"Период: {calendar.month_name[month]} {year}")
 wb_orders = load_wb_orders(DB_URL, year, month)
 wb_sales  = load_wb_sales(DB_URL, year, month)
 oz_posts  = load_ozon_postings(DB_URL, year, month)
-oz_txs    = load_ozon_transactions(DB_URL, year, month)
 
 # ── Агрегаты WB ───────────────────────────────────────────────────────────────
 if not wb_orders.empty:
@@ -69,31 +68,14 @@ else:
 if not oz_posts.empty:
     oz_posts["created_at"] = pd.to_datetime(oz_posts["created_at"])
     oz_posts["day"] = oz_posts["created_at"].dt.day
-    oz_orders        = oz_posts[~oz_posts["is_cancelled"]]
+    oz_orders     = oz_posts[~oz_posts["is_cancelled"]]
+    oz_delivered  = oz_posts[oz_posts["status"] == "delivered"]
     oz_qty_orders    = int(oz_orders["quantity"].sum())
+    oz_qty_sold      = int(oz_delivered["quantity"].sum())
     oz_qty_cancelled = int(oz_posts[oz_posts["is_cancelled"]]["quantity"].sum())
 else:
-    oz_qty_orders = oz_qty_cancelled = 0
-    oz_orders = pd.DataFrame()
-
-if not oz_txs.empty:
-    oz_txs["operation_date"] = pd.to_datetime(oz_txs["operation_date"])
-    oz_txs["day"] = oz_txs["operation_date"].dt.day
-    oz_sold_tx  = oz_txs[oz_txs["operation_type"] == "OperationAgentDeliveredToCustomer"]
-    # Проверяем свежесть: для завершённых месяцев транзакции должны покрывать весь месяц
-    _days_in_month = calendar.monthrange(year, month)[1]
-    _is_past_month = (year, month) < (today.year, today.month)
-    _max_tx_day    = int(oz_txs["day"].max()) if not oz_txs.empty else 0
-    _tx_stale      = _is_past_month and _max_tx_day < (_days_in_month - 7)
-    if _tx_stale:
-        # Транзакции устарели — берём незаотменённые заказы как прокси
-        oz_sold_tx  = pd.DataFrame()
-        oz_qty_sold = int(oz_orders["quantity"].sum()) if not oz_orders.empty else 0
-    else:
-        oz_qty_sold = len(oz_sold_tx)
-else:
-    oz_sold_tx  = pd.DataFrame()
-    oz_qty_sold = int(oz_orders["quantity"].sum()) if not oz_orders.empty else 0
+    oz_qty_orders = oz_qty_sold = oz_qty_cancelled = 0
+    oz_orders = oz_delivered = pd.DataFrame()
 
 total_orders  = wb_qty_orders + oz_qty_orders
 total_sold    = wb_qty_sold + oz_qty_sold
@@ -102,8 +84,8 @@ total_returns = wb_qty_returned + oz_qty_cancelled
 # ── Расчёт прогресса плана ───────────────────────────────────────────────────
 days_in_month = calendar.monthrange(year, month)[1]
 
-last_day_wb  = int(wb_sold["day"].max())    if not wb_sold.empty    else 0
-last_day_oz  = int(oz_sold_tx["day"].max()) if not oz_sold_tx.empty else 0
+last_day_wb  = int(wb_sold["day"].max())       if not wb_sold.empty      else 0
+last_day_oz  = int(oz_delivered["day"].max()) if not oz_delivered.empty else 0
 # Для завершённых исторических месяцев используем полную длину месяца
 _is_past_month = (year, month) < (today.year, today.month)
 if _is_past_month and last_day_wb == 0 and last_day_oz == 0:
@@ -253,8 +235,8 @@ wb_by_day = (
     if not wb_sold.empty else pd.Series(0, index=all_days)
 )
 oz_by_day = (
-    oz_sold_tx.groupby("day").size().reindex(all_days, fill_value=0)
-    if not oz_sold_tx.empty else pd.Series(0, index=all_days)
+    oz_delivered.groupby("day")["quantity"].sum().reindex(all_days, fill_value=0)
+    if not oz_delivered.empty else pd.Series(0, index=all_days)
 )
 
 daily_plan_line = monthly_plan / days_in_month if monthly_plan else None

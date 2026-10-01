@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import calendar
 from datetime import date
 
-from src.data_loader import load_ozon_postings, load_ozon_transactions
+from src.data_loader import load_ozon_postings
 
 st.title("📊 Дашборд продаж Ozon")
 
@@ -24,15 +24,15 @@ st.sidebar.markdown("---")
 st.sidebar.caption(f"Период: {calendar.month_name[month]} {year}")
 
 posts = load_ozon_postings(DB_URL, year, month)
-txs   = load_ozon_transactions(DB_URL, year, month)
 
-if posts.empty and txs.empty:
+if posts.empty:
     st.warning("Нет данных Ozon за этот период. Загрузите командой:")
     st.code(
         f"OZON_CLIENT_ID='...' OZON_API_KEY='...' DATABASE_URL='...' "
         f"SYNC_YEAR={year} SYNC_MONTH={month} python3 scripts/sync_ozon_orders.py"
     )
     st.stop()
+
 
 days_in_month = calendar.monthrange(year, month)[1]
 all_days = list(range(1, days_in_month + 1))
@@ -52,27 +52,21 @@ else:
     orders_by_day = pd.Series(0, index=all_days)
     cancel_by_day = pd.Series(0, index=all_days)
 
-# ── Выкупы — из транзакций (дата фактической доставки покупателю) ─────────────
-if not txs.empty:
-    txs["operation_date"] = pd.to_datetime(txs["operation_date"])
-    txs["day"] = txs["operation_date"].dt.day
-    sold_tx = txs[txs["operation_type"] == "OperationAgentDeliveredToCustomer"]
-    # Каждая строка = 1 единица товара (quantity в транзакциях = 0, считаем строки)
-    qty_sold    = len(sold_tx)
-    sold_by_day = sold_tx.groupby("day").size().reindex(all_days, fill_value=0)
+# ── Выкупы — из постингов со статусом delivered ───────────────────────────────
+if not posts.empty:
+    delivered = posts[posts["status"] == "delivered"]
+    qty_sold    = int(delivered["quantity"].sum())
+    sold_by_day = delivered.groupby("day")["quantity"].sum().reindex(all_days, fill_value=0)
 else:
     qty_sold    = 0
-    sold_tx     = pd.DataFrame()
+    delivered   = pd.DataFrame()
     sold_by_day = pd.Series(0, index=all_days)
 
 OZON_PLAN = 800  # цель по выкупам в месяц
 
 plan_pct_oz  = qty_sold / OZON_PLAN * 100 if OZON_PLAN else 0
 days_in_month_oz = calendar.monthrange(year, month)[1]
-if not sold_tx.empty:
-    max_day_oz   = int(pd.to_datetime(sold_tx["operation_date"]).dt.day.max() or 1)
-else:
-    max_day_oz   = 1
+max_day_oz   = int(delivered["day"].max()) if not delivered.empty else 1
 daily_rate_oz    = qty_sold / max_day_oz if max_day_oz else 0
 forecast_oz      = round(daily_rate_oz * days_in_month_oz)
 forecast_pct_oz  = forecast_oz / OZON_PLAN * 100 if OZON_PLAN else 0
@@ -96,7 +90,7 @@ k4.markdown(
     unsafe_allow_html=True,
 )
 
-st.caption("Выкупы — по дате фактической доставки покупателю (транзакционная модель Ozon)")
+st.caption("Выкупы — постинги со статусом delivered (дата заказа). Заказы = все незаотменённые.")
 st.markdown("---")
 
 # ── График по дням ────────────────────────────────────────────────────────────
@@ -113,10 +107,10 @@ st.plotly_chart(fig, use_container_width=True)
 # ── Топ товаров по выкупам ────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown("#### Топ товаров по выкупам")
-if not sold_tx.empty:
+if not delivered.empty:
     top = (
-        sold_tx.groupby(["offer_id", "product_name"])
-        .size()
+        delivered.groupby(["offer_id", "product_name"])["quantity"]
+        .sum()
         .reset_index(name="qty")
         .sort_values("qty", ascending=False)
         .head(10)

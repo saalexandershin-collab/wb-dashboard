@@ -168,8 +168,8 @@ def calc_month_metrics(tx: pd.DataFrame, po: pd.DataFrame):
     # Чистый payout = сумма ВСЕХ транзакций (аналог ppvz_for_pay у WB)
     payout     = float(tx["amount"].sum()) if not tx.empty else 0.0
 
-    # Выручка (реализационная цена) из постингов (по дате заказа)
-    delivered  = po[~po["is_cancelled"]]
+    # Выручка и выкупы из постингов (только status='delivered' = фактически доставлено)
+    delivered  = po[po["status"] == "delivered"]
     revenue    = float((delivered["price"] * delivered["quantity"]).sum())
     sold_qty   = int(delivered["quantity"].sum())
     cancelled  = po[po["is_cancelled"]]
@@ -248,7 +248,7 @@ with tab_month:
     # ── РАЗДЕЛ 1: Продажи по продуктам ───────────────────────────────────────
     st.markdown("#### 📦 Продажи по продуктам")
 
-    delivered = po[~po["is_cancelled"]].copy()
+    delivered = po[po["status"] == "delivered"].copy()
     if not delivered.empty:
         prod = (
             delivered
@@ -532,7 +532,7 @@ with tab_year:
     st.markdown(f"#### 📦 Продажи по продуктам за {REPORT_YEAR} год")
 
     yr_del = df_po_year[
-        (~df_po_year["is_cancelled"]) &
+        (df_po_year["status"] == "delivered") &
         (df_po_year["month"].isin(AVAILABLE_MONTHS))
     ]
     if not yr_del.empty:
