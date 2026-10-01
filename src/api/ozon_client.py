@@ -243,9 +243,13 @@ def parse_stocks(raw: list[dict]) -> list[dict]:
 
 def parse_cash_flow_statement(raw: list[dict]) -> list[dict]:
     """
-    Преобразует полу-месячные отчёты cash-flow-statement в строки, совместимые
+    Преобразует недельные отчёты cash-flow-statement в строки, совместимые
     с таблицей ozon_transactions. Используется как замена /v3/finance/transaction/list.
-    Создаёт одну сводную строку на каждый период с operation_type='CashFlowStatement'.
+    Структура ответа API (актуально на октябрь 2026):
+      period.id (всегда 0), period.begin, period.end,
+      orders_amount, returns_amount, commission_amount,
+      services_amount, item_delivery_and_return_amount, currency_code.
+    Создаёт одну строку на каждый период. amount = примерный нетто-доход.
     """
     rows = []
     for period_data in raw:
@@ -253,28 +257,20 @@ def parse_cash_flow_statement(raw: list[dict]) -> list[dict]:
         begin = _parse_dt(period.get("begin"))
         end   = _parse_dt(period.get("end"))
 
-        # period_id может быть на верхнем уровне или внутри period
-        period_id = (
-            str(period_data.get("cash_flow_id") or "")
-            or str(period_data.get("period_id") or "")
-            or str(period.get("id") or "")
-        )
-
-        details = period_data.get("details") or {}
-        # invoice_transfer = к выплате за период; может быть на верхнем уровне или в details
-        invoice_transfer = (
-            _float(period_data.get("invoice_transfer"))
-            or _float(details.get("invoice_transfer"))
-            or 0.0
-        )
-        # orders_amount = выручка от заказов
-        orders_amount = _float(period_data.get("orders_amount")) or 0.0
-
         if begin is None:
             continue
 
-        # Уникальный ключ: период_id или дата начала — чтобы не перезаписывать разные периоды
-        unique_id = period_id if period_id else begin.strftime("%Y%m%d")
+        # period.id всегда равен 0 → используем дату начала как уникальный ключ
+        unique_id = begin.strftime("%Y%m%d")
+
+        orders_amount    = _float(period_data.get("orders_amount")) or 0.0
+        returns_amount   = abs(_float(period_data.get("returns_amount")) or 0.0)
+        commission       = abs(_float(period_data.get("commission_amount")) or 0.0)
+        services         = abs(_float(period_data.get("services_amount")) or 0.0)
+        delivery_returns = abs(_float(period_data.get("item_delivery_and_return_amount")) or 0.0)
+
+        # Нетто ≈ к выплате: выручка минус возвраты, комиссии, услуги, доставка
+        net_payout = orders_amount - returns_amount - commission - services - delivery_returns
 
         rows.append({
             "operation_id":        f"cfs_{unique_id}",
@@ -287,11 +283,11 @@ def parse_cash_flow_statement(raw: list[dict]) -> list[dict]:
             "offer_id":            "",
             "product_name":        "",
             "quantity":            0,
-            "amount":              invoice_transfer,
+            "amount":              net_payout,
             "accruals_for_sale":   orders_amount,
-            "sale_commission":     0.0,
-            "delivery_charge":     0.0,
-            "return_delivery_charge": 0.0,
+            "sale_commission":     -commission,
+            "delivery_charge":     -delivery_returns,
+            "return_delivery_charge": -returns_amount,
             "period_from":         begin,
             "period_to":           end,
         })
